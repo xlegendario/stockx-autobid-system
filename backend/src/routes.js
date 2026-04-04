@@ -35,7 +35,7 @@ router.post("/tasks/next", async (req, res) => {
     const runnerName = String(runnerNameRaw).trim().toLowerCase();
 
     const records = await fetchOrders();
-    const task = buildTask(records, runnerName);
+    const task = await buildTask(records, runnerName);
 
     res.json({
       ok: true,
