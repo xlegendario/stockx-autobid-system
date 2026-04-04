@@ -425,10 +425,12 @@ function reportTaskSuccess() {
     return;
   }
 
+  const submittedBid = Number(formatBidValue(currentTask.maxBid));
+
   const payload = {
     recordId: currentTask.recordId,
     type: currentTask.type,
-    maxBid: currentTask.maxBid,
+    maxBid: submittedBid,
     action: "BID_CREATED"
   };
 
