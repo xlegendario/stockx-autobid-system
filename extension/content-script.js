@@ -33,38 +33,19 @@ function normalizeText(value) {
 }
 
 function openSizeDropdownAndSelect(targetSize) {
-  console.log("Checking current selected size...");
+  console.log("Opening size dropdown first...");
 
-  const normalizedTarget = normalizeText(targetSize);
+  const buttons = Array.from(document.querySelectorAll("button"));
 
-  const candidates = Array.from(
-    document.querySelectorAll("button, div")
-  );
-
-  const dropdownButton = candidates.find((el) => {
-    const text = normalizeText(el.innerText);
-    return (
-      text === "all" ||
-      text === "size:" ||
-      text.includes("size") ||
-      text.includes("eu ")
-    );
+  // Dit werkte eerder op jouw page:
+  const dropdownButton = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text === "all" || text.includes("eu ");
   });
 
   if (!dropdownButton) {
     console.log("Size dropdown not found yet, retrying...");
     setTimeout(() => openSizeDropdownAndSelect(targetSize), 1000);
-    return;
-  }
-
-  const currentText = normalizeText(dropdownButton.innerText);
-
-  if (
-    currentText === normalizedTarget ||
-    currentText === `eu ${normalizedTarget}` ||
-    currentText.includes(`eu ${normalizedTarget}`)
-  ) {
-    console.log("Size already selected:", currentText);
     return;
   }
 
@@ -75,18 +56,18 @@ function openSizeDropdownAndSelect(targetSize) {
     selectSizeFromDropdown(targetSize);
   }, 1000);
 }
+
 function selectSizeFromDropdown(targetSize) {
   const normalizedTarget = normalizeText(targetSize);
   console.log("Trying to select size from dropdown:", normalizedTarget);
 
-  const allButtons = Array.from(document.querySelectorAll("button"));
-  const allDivs = Array.from(document.querySelectorAll("div"));
-  const allSpans = Array.from(document.querySelectorAll("span"));
-
-  const candidates = [...allButtons, ...allDivs, ...allSpans];
+  const candidates = Array.from(
+    document.querySelectorAll("button, div, span")
+  );
 
   const match = candidates.find((el) => {
     const text = normalizeText(el.innerText);
+
     return (
       text === normalizedTarget ||
       text === `eu ${normalizedTarget}` ||
