@@ -27,20 +27,14 @@ async function handleTask() {
 
   const task = taskData.task;
 
-  // 🔥 OPEN STOCKX PAGE
+  // Save task so the content script can read it after page navigation
+  await chrome.storage.local.set({ currentTask: task });
+
   const url = buildStockXUrl(task);
 
-  const tab = await chrome.tabs.create({
+  await chrome.tabs.create({
     url
   });
-  
-  // 🔥 wacht tot tab geladen is en stuur task
-  setTimeout(() => {
-    chrome.tabs.sendMessage(tab.id, {
-      type: "NEW_TASK",
-      task
-    });
-  }, 3000);
 
   return {
     ok: true,
@@ -69,7 +63,6 @@ async function fetchNextTask() {
   return data;
 }
 
-// 🔥 VERY IMPORTANT FUNCTION
 function buildStockXUrl(task) {
   if (task.stockxUrl) {
     return task.stockxUrl;
