@@ -1,8 +1,16 @@
 import { CONFIG } from "./config.js";
 
+let isRunnerEnabled = false;
+let isTaskInProgress = false;
+let loopTimeout = null;
+
+const LOOP_DELAY_MS = 8000;
+const NEXT_TASK_DELAY_AFTER_SUCCESS_MS = 5000;
+const ERROR_RETRY_DELAY_MS = 15000;
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "FETCH_NEXT_TASK") {
-    handleTask()
+    handleSingleTask()
       .then((result) => sendResponse(result))
       .catch((err) => {
         sendResponse({
@@ -14,26 +22,138 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "START_RUNNER") {
+    startRunner()
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
+    return true;
+  }
+
+  if (message.type === "STOP_RUNNER") {
+    stopRunner();
+    sendResponse({
+      ok: true,
+      isRunnerEnabled,
+      isTaskInProgress
+    });
+    return false;
+  }
+
+  if (message.type === "GET_RUNNER_STATUS") {
+    sendResponse({
+      ok: true,
+      isRunnerEnabled,
+      isTaskInProgress
+    });
+    return false;
+  }
+
   if (message.type === "TASK_COMPLETED") {
     submitTaskResult(message.payload)
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((err) => sendResponse({ ok: false, error: err.message }));
+      .then((result) => {
+        isTaskInProgress = false;
+
+        if (isRunnerEnabled) {
+          scheduleNextRun(NEXT_TASK_DELAY_AFTER_SUCCESS_MS);
+        }
+
+        sendResponse({ ok: true, result });
+      })
+      .catch((err) => {
+        isTaskInProgress = false;
+
+        if (isRunnerEnabled) {
+          scheduleNextRun(ERROR_RETRY_DELAY_MS);
+        }
+
+        sendResponse({ ok: false, error: err.message });
+      });
 
     return true;
   }
 });
 
-async function handleTask() {
+async function startRunner() {
+  isRunnerEnabled = true;
+  scheduleNextRun(500);
+
+  return {
+    ok: true,
+    message: "Runner started",
+    isRunnerEnabled,
+    isTaskInProgress
+  };
+}
+
+function stopRunner() {
+  isRunnerEnabled = false;
+
+  if (loopTimeout) {
+    clearTimeout(loopTimeout);
+    loopTimeout = null;
+  }
+}
+
+function scheduleNextRun(delayMs) {
+  if (!isRunnerEnabled) return;
+
+  if (loopTimeout) {
+    clearTimeout(loopTimeout);
+    loopTimeout = null;
+  }
+
+  loopTimeout = setTimeout(() => {
+    runLoop().catch((err) => {
+      console.error("Runner loop error:", err);
+
+      isTaskInProgress = false;
+
+      if (isRunnerEnabled) {
+        scheduleNextRun(ERROR_RETRY_DELAY_MS);
+      }
+    });
+  }, delayMs);
+}
+
+async function runLoop() {
+  if (!isRunnerEnabled) return;
+  if (isTaskInProgress) return;
+
+  const result = await handleSingleTask();
+
+  if (!isRunnerEnabled) return;
+
+  if (!result.task) {
+    scheduleNextRun(LOOP_DELAY_MS);
+    return;
+  }
+
+  // If there is a task, content script will complete it and call TASK_COMPLETED
+  // so we do not schedule here yet.
+}
+
+async function handleSingleTask() {
+  if (isTaskInProgress) {
+    return {
+      ok: true,
+      message: "Task already in progress"
+    };
+  }
+
   const taskData = await fetchNextTask();
 
   if (!taskData.task) {
     return {
       ok: true,
-      message: "No task available"
+      message: "No task available",
+      task: null
     };
   }
 
   const task = taskData.task;
+
+  isTaskInProgress = true;
 
   await chrome.storage.local.set({ currentTask: task });
 
