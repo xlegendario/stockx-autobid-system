@@ -7,9 +7,7 @@ chrome.runtime.onMessage.addListener((message) => {
     currentTask = message.task;
     console.log("Received task:", currentTask);
 
-    setTimeout(() => {
-      handleTask();
-    }, 2000);
+    chrome.storage.local.set({ currentTask });
   }
 });
 
@@ -148,6 +146,11 @@ function goToOfferPage(size) {
 function handleBuyPage(attempt = 0) {
   if (!currentTask) {
     console.log("No currentTask available on buy page");
+    return;
+  }
+
+  if (currentTask.type !== "PLACE_OR_UPDATE") {
+    console.log("Buy page skipped: not a PLACE_OR_UPDATE task");
     return;
   }
 
