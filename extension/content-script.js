@@ -226,7 +226,7 @@ function fillBidPrice(attempt = 0) {
     return;
   }
 
-  const bidValue = String(currentTask.maxBid).trim();
+  const bidValue = formatBidValue(currentTask.maxBid);
 
   console.log("🔥 Filling bid price:", bidValue);
 
