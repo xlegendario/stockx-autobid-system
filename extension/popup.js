@@ -1,12 +1,36 @@
-document.getElementById("fetchTask").addEventListener("click", async () => {
-  const status = document.getElementById("status");
-  status.textContent = "Fetching task...";
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>StockX Runner</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        width: 320px;
+        padding: 12px;
+      }
 
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "FETCH_NEXT_TASK" });
+      button {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 10px;
+        cursor: pointer;
+      }
 
-    status.textContent = JSON.stringify(response, null, 2);
-  } catch (err) {
-    status.textContent = `Error: ${err.message}`;
-  }
-});
+      #status {
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="startRunner">Start Runner</button>
+    <button id="stopRunner">Stop Runner</button>
+    <button id="fetchTask">Fetch Next Task Once</button>
+
+    <div id="status">Ready</div>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
