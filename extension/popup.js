@@ -1,36 +1,48 @@
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>StockX Runner</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        width: 320px;
-        padding: 12px;
-      }
+async function updateStatus() {
+  const statusEl = document.getElementById("status");
 
-      button {
-        width: 100%;
-        padding: 10px;
-        margin-bottom: 10px;
-        cursor: pointer;
-      }
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "GET_RUNNER_STATUS" });
+    statusEl.textContent = JSON.stringify(response, null, 2);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+  }
+}
 
-      #status {
-        font-size: 12px;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-    </style>
-  </head>
-  <body>
-    <button id="startRunner">Start Runner</button>
-    <button id="stopRunner">Stop Runner</button>
-    <button id="fetchTask">Fetch Next Task Once</button>
+document.getElementById("startRunner").addEventListener("click", async () => {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "Starting runner...";
 
-    <div id="status">Ready</div>
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "START_RUNNER" });
+    statusEl.textContent = JSON.stringify(response, null, 2);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+  }
+});
 
-    <script type="module" src="popup.js"></script>
-  </body>
-</html>
+document.getElementById("stopRunner").addEventListener("click", async () => {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "Stopping runner...";
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "STOP_RUNNER" });
+    statusEl.textContent = JSON.stringify(response, null, 2);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+  }
+});
+
+document.getElementById("fetchTask").addEventListener("click", async () => {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "Fetching one task...";
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "FETCH_NEXT_TASK" });
+    statusEl.textContent = JSON.stringify(response, null, 2);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+  }
+});
+
+updateStatus();
