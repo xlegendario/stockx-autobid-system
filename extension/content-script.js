@@ -336,6 +336,24 @@ function waitForReviewBidEnabled(attempt = 0) {
   clickReviewBid();
 }
 
+function clickElement(el) {
+  if (!el) return false;
+
+  el.scrollIntoView({ block: "center", inline: "center" });
+
+  ["pointerdown", "mousedown", "mouseup", "click"].forEach((eventName) => {
+    el.dispatchEvent(
+      new MouseEvent(eventName, {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      })
+    );
+  });
+
+  return true;
+}
+
 function clickReviewBid(attempt = 0) {
   if (attempt > 15) {
     console.log("Review Bid button not found after multiple attempts");
@@ -361,12 +379,12 @@ function clickReviewBid(attempt = 0) {
   // wacht op confirm scherm en klik dan Confirm Bid
   setTimeout(() => {
     clickConfirmBid();
-  }, 1500);
+  }, 2500);
 }
 
 function clickConfirmBid(attempt = 0) {
-  if (attempt > 15) {
-    console.log("Confirm Bid button not found after multiple attempts");
+  if (attempt > 20) {
+    console.log("Confirm Bid button not found/enabled after multiple attempts");
     return;
   }
 
@@ -383,6 +401,16 @@ function clickConfirmBid(attempt = 0) {
     return;
   }
 
+  const isDisabled =
+    btn.disabled ||
+    btn.getAttribute("aria-disabled") === "true";
+
+  if (isDisabled) {
+    console.log("Confirm Bid still disabled, waiting...");
+    setTimeout(() => clickConfirmBid(attempt + 1), 1000);
+    return;
+  }
+
   console.log("🔥 Clicking Confirm Bid");
-  btn.click();
+  clickElement(btn);
 }
