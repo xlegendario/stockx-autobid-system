@@ -413,4 +413,34 @@ function clickConfirmBid(attempt = 0) {
 
   console.log("🔥 Clicking Confirm Bid");
   clickElement(btn);
+
+  setTimeout(() => {
+    reportTaskSuccess();
+  }, 2500);
+}
+
+function reportTaskSuccess() {
+  if (!currentTask) {
+    console.log("No currentTask available to report success");
+    return;
+  }
+
+  const payload = {
+    recordId: currentTask.recordId,
+    type: currentTask.type,
+    maxBid: currentTask.maxBid,
+    action: "BID_CREATED"
+  };
+
+  console.log("✅ Reporting task success:", payload);
+
+  chrome.runtime.sendMessage(
+    {
+      type: "TASK_COMPLETED",
+      payload
+    },
+    (response) => {
+      console.log("Backend result response:", response);
+    }
+  );
 }
