@@ -1,27 +1,53 @@
 console.log("StockX Autobid content script loaded");
 
-// Wait until page is fully loaded
-window.addEventListener("load", () => {
-  console.log("Page loaded, checking if StockX product page...");
+let currentTask = null;
 
-  const isProductPage = window.location.pathname.length > 1;
+// 🔥 Luister naar task van service worker
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === "NEW_TASK") {
+    currentTask = message.task;
+    console.log("Received task:", currentTask);
 
-  if (!isProductPage) {
-    console.log("Not a product page");
-    return;
+    setTimeout(() => {
+      handleTask();
+    }, 2000); // kleine delay zodat page volledig geladen is
   }
+});
 
-  console.log("Product page detected:", window.location.href);
+window.addEventListener("load", () => {
+  console.log("Page loaded:", window.location.href);
+});
 
-  // Example: find size buttons
-  const sizeButtons = document.querySelectorAll('button');
+function handleTask() {
+  if (!currentTask) return;
 
-  console.log("Found buttons:", sizeButtons.length);
+  console.log("Handling task:", currentTask);
 
-  // DEBUG: log some button texts
-  sizeButtons.forEach((btn, i) => {
-    if (i < 10) {
-      console.log("Button text:", btn.innerText);
+  selectSize(currentTask.size);
+}
+
+function selectSize(targetSize) {
+  console.log("Trying to select size:", targetSize);
+
+  const buttons = document.querySelectorAll("button");
+
+  let found = false;
+
+  buttons.forEach((btn) => {
+    const text = btn.innerText.trim();
+
+    if (!text) return;
+
+    // match EU sizes (StockX format)
+    if (text.includes(targetSize)) {
+      console.log("Clicking size button:", text);
+      btn.click();
+      found = true;
     }
   });
-});
+
+  if (!found) {
+    console.log("Size not found yet, retrying...");
+    setTimeout(() => selectSize(targetSize), 1000);
+  }
+}
