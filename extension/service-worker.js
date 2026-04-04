@@ -13,6 +13,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     return true;
   }
+
+  if (message.type === "TASK_COMPLETED") {
+    submitTaskResult(message.payload)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
+    return true;
+  }
 });
 
 async function handleTask() {
@@ -27,19 +35,19 @@ async function handleTask() {
 
   const task = taskData.task;
 
-  // Save task so the content script can read it after page navigation
   await chrome.storage.local.set({ currentTask: task });
 
   const url = buildStockXUrl(task);
 
-  await chrome.tabs.create({
+  const tab = await chrome.tabs.create({
     url
   });
 
   return {
     ok: true,
     task,
-    openedUrl: url
+    openedUrl: url,
+    tabId: tab.id
   };
 }
 
@@ -58,6 +66,24 @@ async function fetchNextTask() {
 
   if (!data.ok) {
     throw new Error(data.error || "Backend error");
+  }
+
+  return data;
+}
+
+async function submitTaskResult(payload) {
+  const res = await fetch(`${CONFIG.BACKEND_URL}/tasks/${payload.recordId}/result`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+
+  if (!data.ok) {
+    throw new Error(data.error || "Failed to submit task result");
   }
 
   return data;
