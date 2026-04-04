@@ -21,48 +21,120 @@ function handleTask() {
   if (!currentTask) return;
 
   console.log("Handling task:", currentTask);
-
-  openSizeDropdownAndSelect(currentTask.size);
+  openDropdownThenSelect(currentTask.size, 0);
 }
 
 function normalizeText(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
+    .replace(/\s+/g, " ")
     .replace(",", ".");
 }
 
-function openSizeDropdownAndSelect(targetSize) {
-  console.log("Opening size dropdown first...");
+function clickElement(el) {
+  if (!el) return false;
 
-  const buttons = Array.from(document.querySelectorAll("button"));
+  el.scrollIntoView({ block: "center", inline: "center" });
 
-  // Dit werkte eerder op jouw page:
-  const dropdownButton = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-    return text === "all" || text.includes("eu ");
+  ["pointerdown", "mousedown", "mouseup", "click"].forEach((eventName) => {
+    el.dispatchEvent(
+      new MouseEvent(eventName, {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      })
+    );
   });
 
-  if (!dropdownButton) {
-    console.log("Size dropdown not found yet, retrying...");
-    setTimeout(() => openSizeDropdownAndSelect(targetSize), 1000);
+  return true;
+}
+
+function getClickableAncestor(el) {
+  let node = el;
+  let depth = 0;
+
+  while (node && depth < 5) {
+    if (
+      node.tagName === "BUTTON" ||
+      node.getAttribute?.("role") === "button" ||
+      node.getAttribute?.("role") === "option" ||
+      typeof node.onclick === "function"
+    ) {
+      return node;
+    }
+
+    node = node.parentElement;
+    depth++;
+  }
+
+  return el;
+}
+
+function findSizeDropdownControl() {
+  // Eerst expliciet zoeken naar het huidige size-control element
+  const candidates = Array.from(
+    document.querySelectorAll('button, div, span, [role="button"]')
+  );
+
+  // Zoek naar iets dat "all" of "eu ..." toont
+  const direct = candidates.find((el) => {
+    const text = normalizeText(el.innerText);
+    return text === "all" || text.startsWith("eu ");
+  });
+
+  if (direct) {
+    return getClickableAncestor(direct);
+  }
+
+  // Fallback: zoek iets rondom "Size:"
+  const sizeLabel = candidates.find((el) => normalizeText(el.innerText) === "size:");
+  if (sizeLabel) {
+    const parent = sizeLabel.parentElement;
+    if (parent) {
+      const clickableInside = parent.querySelector('button, [role="button"], div');
+      if (clickableInside) return getClickableAncestor(clickableInside);
+      return getClickableAncestor(parent);
+    }
+  }
+
+  return null;
+}
+
+function openDropdownThenSelect(targetSize, attempt = 0) {
+  if (attempt > 10) {
+    console.log("Failed to open size dropdown after multiple attempts");
     return;
   }
 
-  console.log("Clicking size dropdown:", dropdownButton.innerText);
-  dropdownButton.click();
+  const dropdown = findSizeDropdownControl();
+
+  if (!dropdown) {
+    console.log("Size dropdown control not found, retrying...", attempt);
+    setTimeout(() => openDropdownThenSelect(targetSize, attempt + 1), 1000);
+    return;
+  }
+
+  console.log("Clicking size dropdown control:", dropdown.innerText || dropdown.outerHTML);
+  clickElement(dropdown);
 
   setTimeout(() => {
-    selectSizeFromDropdown(targetSize);
-  }, 1000);
+    selectSizeOption(targetSize, 0);
+  }, 1200);
 }
 
-function selectSizeFromDropdown(targetSize) {
+function selectSizeOption(targetSize, attempt = 0) {
+  if (attempt > 15) {
+    console.log("Failed to find size option after multiple attempts");
+    return;
+  }
+
   const normalizedTarget = normalizeText(targetSize);
-  console.log("Trying to select size from dropdown:", normalizedTarget);
 
   const candidates = Array.from(
-    document.querySelectorAll("button, div, span")
+    document.querySelectorAll(
+      'button, div, span, li, p, [role="option"], [role="button"], [role="menuitem"]'
+    )
   );
 
   const match = candidates.find((el) => {
@@ -71,16 +143,19 @@ function selectSizeFromDropdown(targetSize) {
     return (
       text === normalizedTarget ||
       text === `eu ${normalizedTarget}` ||
-      text.includes(`eu ${normalizedTarget}`)
+      text.includes(`eu ${normalizedTarget}`) ||
+      text === `${normalizedTarget} eu`
     );
   });
 
   if (!match) {
-    console.log("Size option not found yet, retrying...");
-    setTimeout(() => selectSizeFromDropdown(targetSize), 1000);
+    console.log("Size option not found yet, retrying...", normalizedTarget, "attempt", attempt);
+    setTimeout(() => selectSizeOption(targetSize, attempt + 1), 800);
     return;
   }
 
+  const clickable = getClickableAncestor(match);
+
   console.log("Clicking size option:", match.innerText);
-  match.click();
+  clickElement(clickable);
 }
