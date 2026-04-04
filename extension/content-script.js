@@ -37,11 +37,18 @@ function openSizeDropdownAndSelect(targetSize) {
 
   const normalizedTarget = normalizeText(targetSize);
 
-  const buttons = Array.from(document.querySelectorAll("button"));
+  const candidates = Array.from(
+    document.querySelectorAll("button, div")
+  );
 
-  const dropdownButton = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-    return text.includes("eu ");
+  const dropdownButton = candidates.find((el) => {
+    const text = normalizeText(el.innerText);
+    return (
+      text === "all" ||
+      text === "size:" ||
+      text.includes("size") ||
+      text.includes("eu ")
+    );
   });
 
   if (!dropdownButton) {
@@ -52,8 +59,11 @@ function openSizeDropdownAndSelect(targetSize) {
 
   const currentText = normalizeText(dropdownButton.innerText);
 
-  // 🔥 CHECK IF ALREADY SELECTED
-  if (currentText.includes(normalizedTarget)) {
+  if (
+    currentText === normalizedTarget ||
+    currentText === `eu ${normalizedTarget}` ||
+    currentText.includes(`eu ${normalizedTarget}`)
+  ) {
     console.log("Size already selected:", currentText);
     return;
   }
@@ -65,7 +75,6 @@ function openSizeDropdownAndSelect(targetSize) {
     selectSizeFromDropdown(targetSize);
   }, 1000);
 }
-
 function selectSizeFromDropdown(targetSize) {
   const normalizedTarget = normalizeText(targetSize);
   console.log("Trying to select size from dropdown:", normalizedTarget);
