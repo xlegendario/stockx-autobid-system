@@ -213,7 +213,8 @@ function formatBidValue(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "";
 
-  return String(num).replace(".", ",");
+  // veilige optie: nooit boven maxBid gaan
+  return String(Math.floor(num));
 }
 
 function fillBidPrice(attempt = 0) {
