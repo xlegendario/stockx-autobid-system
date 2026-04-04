@@ -4,6 +4,17 @@ let isRunnerEnabled = false;
 let isTaskInProgress = false;
 let loopTimeout = null;
 
+async function loadState() {
+  const data = await chrome.storage.local.get(["runnerEnabled"]);
+  isRunnerEnabled = data.runnerEnabled === true;
+}
+
+async function saveState() {
+  await chrome.storage.local.set({
+    runnerEnabled: isRunnerEnabled
+  });
+}
+
 const LOOP_DELAY_MS = 8000;
 const NEXT_TASK_DELAY_AFTER_SUCCESS_MS = 5000;
 const ERROR_RETRY_DELAY_MS = 15000;
@@ -76,6 +87,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function startRunner() {
   isRunnerEnabled = true;
+  await saveState();
+
   scheduleNextRun(500);
 
   return {
@@ -88,6 +101,8 @@ async function startRunner() {
 
 function stopRunner() {
   isRunnerEnabled = false;
+
+  chrome.storage.local.set({ runnerEnabled: false });
 
   if (loopTimeout) {
     clearTimeout(loopTimeout);
@@ -129,8 +144,8 @@ async function runLoop() {
     return;
   }
 
-  // If there is a task, content script will complete it and call TASK_COMPLETED
-  // so we do not schedule here yet.
+  // if task exists, content script will finish it
+  // and TASK_COMPLETED will schedule the next run
 }
 
 async function handleSingleTask() {
@@ -217,3 +232,10 @@ function buildStockXUrl(task) {
   const sku = task.sku;
   return `https://stockx.com/search?s=${sku}`;
 }
+
+loadState().then(() => {
+  if (isRunnerEnabled) {
+    console.log("🔄 Restoring runner loop after reload");
+    scheduleNextRun(1000);
+  }
+});
