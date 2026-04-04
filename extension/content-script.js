@@ -247,9 +247,10 @@ function fillBidPrice(attempt = 0) {
 
   input.focus();
 
-  // clear existing value
+  // clear
   input.value = "";
   input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
 
   // React-safe setter
   const nativeSetter = Object.getOwnPropertyDescriptor(
@@ -267,10 +268,64 @@ function fillBidPrice(attempt = 0) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
   input.dispatchEvent(new Event("blur", { bubbles: true }));
 
-  console.log("✅ Bid price filled");
+  // Sometimes StockX needs a second pass
   setTimeout(() => {
-    clickReviewBid();
-  }, 1000);
+    const currentVal = String(input.value || "").trim();
+    console.log("Input value after fill attempt:", currentVal);
+
+    // if not accepted properly, try once more
+    if (!currentVal || currentVal === "0") {
+      console.log("Input still empty/invalid, retrying fill...");
+
+      input.focus();
+
+      if (nativeSetter) {
+        nativeSetter.call(input, bidValue);
+      } else {
+        input.value = bidValue;
+      }
+
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.dispatchEvent(new Event("blur", { bubbles: true }));
+    }
+
+    waitForReviewBidEnabled();
+  }, 1200);
+}
+
+function waitForReviewBidEnabled(attempt = 0) {
+  if (attempt > 15) {
+    console.log("Review Bid never became enabled");
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const btn = buttons.find((b) => {
+    const text = (b.innerText || "").trim().toLowerCase();
+    return text.includes("review bid");
+  });
+
+  if (!btn) {
+    console.log("Review Bid button not found yet, retrying...");
+    setTimeout(() => waitForReviewBidEnabled(attempt + 1), 1000);
+    return;
+  }
+
+  const isDisabled =
+    btn.disabled ||
+    btn.getAttribute("aria-disabled") === "true" ||
+    btn.innerText.trim() === "";
+
+  if (isDisabled) {
+    console.log("Review Bid still disabled, waiting...");
+    setTimeout(() => waitForReviewBidEnabled(attempt + 1), 1000);
+    return;
+  }
+
+  console.log("✅ Review Bid enabled");
+  clickReviewBid();
 }
 
 function clickReviewBid(attempt = 0) {
