@@ -328,7 +328,7 @@ function fillBidPrice(attempt = 0) {
 
 function waitForReviewBidEnabled(attempt = 0) {
   if (attempt > 15) {
-    console.log("Review Bid never became enabled");
+    console.log("Review button never became enabled");
     return;
   }
 
@@ -336,11 +336,11 @@ function waitForReviewBidEnabled(attempt = 0) {
 
   const btn = buttons.find((b) => {
     const text = (b.innerText || "").trim().toLowerCase();
-    return text.includes("review bid");
+    return text.includes("review bid") || text.includes("review order");
   });
 
   if (!btn) {
-    console.log("Review Bid button not found yet, retrying...");
+    console.log("Review button not found yet, retrying...");
     setTimeout(() => waitForReviewBidEnabled(attempt + 1), 1000);
     return;
   }
@@ -351,12 +351,12 @@ function waitForReviewBidEnabled(attempt = 0) {
     btn.innerText.trim() === "";
 
   if (isDisabled) {
-    console.log("Review Bid still disabled, waiting...");
+    console.log("Review button still disabled, waiting...");
     setTimeout(() => waitForReviewBidEnabled(attempt + 1), 1000);
     return;
   }
 
-  console.log("✅ Review Bid enabled");
+  console.log("✅ Review button enabled:", btn.innerText);
   clickReviewBid();
 }
 
@@ -380,7 +380,7 @@ function clickElement(el) {
 
 function clickReviewBid(attempt = 0) {
   if (attempt > 15) {
-    console.log("Review Bid button not found after multiple attempts");
+    console.log("Review button not found after multiple attempts");
     return;
   }
 
@@ -388,19 +388,18 @@ function clickReviewBid(attempt = 0) {
 
   const btn = buttons.find((b) => {
     const text = (b.innerText || "").trim().toLowerCase();
-    return text.includes("review bid");
+    return text.includes("review bid") || text.includes("review order");
   });
 
   if (!btn) {
-    console.log("Review Bid button not found yet, retrying...");
+    console.log("Review button not found yet, retrying...");
     setTimeout(() => clickReviewBid(attempt + 1), 1000);
     return;
   }
 
-  console.log("🔥 Clicking Review Bid");
-  btn.click();
+  console.log("🔥 Clicking review button:", btn.innerText);
+  clickElement(btn);
 
-  // wacht op confirm scherm en klik dan Confirm Bid
   setTimeout(() => {
     clickConfirmBid();
   }, 2500);
@@ -408,7 +407,7 @@ function clickReviewBid(attempt = 0) {
 
 function clickConfirmBid(attempt = 0) {
   if (attempt > 20) {
-    console.log("Confirm Bid button not found/enabled after multiple attempts");
+    console.log("Confirm/Place button not found after multiple attempts");
     return;
   }
 
@@ -416,11 +415,11 @@ function clickConfirmBid(attempt = 0) {
 
   const btn = buttons.find((b) => {
     const text = (b.innerText || "").trim().toLowerCase();
-    return text.includes("confirm bid");
+    return text.includes("confirm bid") || text.includes("place order");
   });
 
   if (!btn) {
-    console.log("Confirm Bid button not found yet, retrying...");
+    console.log("Confirm/Place button not found yet, retrying...");
     setTimeout(() => clickConfirmBid(attempt + 1), 1000);
     return;
   }
@@ -430,32 +429,38 @@ function clickConfirmBid(attempt = 0) {
     btn.getAttribute("aria-disabled") === "true";
 
   if (isDisabled) {
-    console.log("Confirm Bid still disabled, waiting...");
+    console.log("Confirm/Place button still disabled, waiting...");
     setTimeout(() => clickConfirmBid(attempt + 1), 1000);
     return;
   }
 
-  console.log("🔥 Clicking Confirm Bid");
+  console.log("🔥 Clicking final submit button:", btn.innerText);
   clickElement(btn);
 
   setTimeout(() => {
-    reportTaskSuccess();
+    reportTaskSuccess(btn.innerText);
   }, 2500);
 }
 
-function reportTaskSuccess() {
+function reportTaskSuccess(finalButtonText = "") {
   if (!currentTask) {
     console.log("No currentTask available to report success");
     return;
   }
 
   const submittedBid = Number(formatBidValue(currentTask.maxBid));
+  const normalizedFinal = String(finalButtonText || "").trim().toLowerCase();
+
+  const action =
+    normalizedFinal.includes("place order")
+      ? "ORDER_PLACED"
+      : "BID_CREATED";
 
   const payload = {
     recordId: currentTask.recordId,
     type: currentTask.type,
     maxBid: submittedBid,
-    action: "BID_CREATED"
+    action
   };
 
   console.log("✅ Reporting task success:", payload);
@@ -467,8 +472,7 @@ function reportTaskSuccess() {
     },
     (response) => {
       console.log("Backend result response:", response);
-  
-      // 🔥 SLUIT TAB NA SUCCESS
+
       setTimeout(() => {
         window.close();
       }, 1000);
