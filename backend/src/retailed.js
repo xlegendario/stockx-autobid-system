@@ -8,8 +8,7 @@ export async function resolveStockxUrlBySku(sku) {
 
   const url = new URL(SEARCH_URL);
 
-  // Tijdelijk uitgaande van een query param "query"
-  // Dit passen we zo nodig aan op basis van jouw echte scraper response/docs.
+  // Based on your endpoint behavior, we use query as the search term.
   url.searchParams.set("query", sku);
 
   const res = await fetch(url.toString(), {
@@ -26,31 +25,29 @@ export async function resolveStockxUrlBySku(sku) {
 
   const data = await res.json();
 
-  // Tijdelijke parsing
-  // Dit moeten we mogelijk aanpassen aan de echte response
-  const first =
-    data?.results?.[0] ||
-    data?.data?.[0] ||
-    data?.products?.[0] ||
-    null;
-
-  if (!first) {
+  if (!Array.isArray(data) || data.length === 0) {
     throw new Error(`No StockX result found for SKU ${sku}`);
   }
 
-  const stockxUrl =
-    first.url ||
-    first.stockxUrl ||
-    first.productUrl ||
-    first.link ||
-    null;
+  // Best match = exact SKU match first
+  const exactMatch = data.find(
+    (item) =>
+      String(item.sku || "").trim().toLowerCase() ===
+      String(sku).trim().toLowerCase()
+  );
 
-  if (!stockxUrl) {
-    throw new Error(`No StockX URL found in scraper response for SKU ${sku}`);
+  const match = exactMatch || data[0];
+
+  if (!match.slug) {
+    throw new Error(`No slug found in scraper response for SKU ${sku}`);
   }
+
+  const stockxUrl = `https://stockx.com/${match.slug}`;
 
   return {
     stockxUrl,
-    raw: data
+    slug: match.slug,
+    matchedSku: match.sku || null,
+    raw: match
   };
 }
