@@ -7,7 +7,7 @@ export async function submitTaskResult(recordId, payload) {
 
   const now = new Date().toISOString();
 
-  if (payload.action === "BID_CREATED") {
+  if (payload.action === "BID_CREATED" || payload.action === "BID_CREATED_FALLBACK") {
     return await updateOrder(recordId, {
       BidPlaced: true,
       CurrentBid: Number.isFinite(Number(payload.maxBid))
@@ -15,18 +15,28 @@ export async function submitTaskResult(recordId, payload) {
         : null,
       LastAction: "BID_CREATED",
       LastSyncAt: now,
-      ErrorMessage: ""
+      ErrorMessage: payload.errorMessage || ""
     });
   }
 
-  if (payload.action === "ORDER_PLACED") {
+  if (payload.action === "ORDER_PLACED" || payload.action === "ORDER_PLACED_FALLBACK") {
     return await updateOrder(recordId, {
       "Fulfillment Status": "StockX Processing",
       BidPlaced: false,
       CurrentBid: null,
       LastAction: "ORDER_PLACED",
       LastSyncAt: now,
-      ErrorMessage: ""
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+
+  if (payload.action === "NO_FUNDS") {
+    return await updateOrder(recordId, {
+      BidPlaced: false,
+      CurrentBid: null,
+      LastAction: "NO_FUNDS",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Payment method declined or insufficient balance"
     });
   }
 
@@ -36,7 +46,7 @@ export async function submitTaskResult(recordId, payload) {
       CurrentBid: null,
       LastAction: "BID_REMOVED",
       LastSyncAt: now,
-      ErrorMessage: ""
+      ErrorMessage: payload.errorMessage || ""
     });
   }
 
