@@ -63,8 +63,10 @@ async function fetchNextTask() {
 
 // 🔥 VERY IMPORTANT FUNCTION
 function buildStockXUrl(task) {
-  const sku = task.sku;
+  if (task.stockxUrl) {
+    return task.stockxUrl;
+  }
 
-  // tijdelijk: search via SKU
+  const sku = task.sku;
   return `https://stockx.com/search?s=${sku}`;
 }
