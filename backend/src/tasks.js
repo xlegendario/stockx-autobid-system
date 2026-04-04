@@ -1,3 +1,5 @@
+import { resolveStockxUrlBySku } from "./retailed.js";
+
 function normalizeLookup(value) {
   if (Array.isArray(value)) return value[0];
   return value;
@@ -98,7 +100,7 @@ export function debugRecords(records, runnerName) {
   });
 }
 
-export function buildTask(records, runnerName) {
+export async function buildTask(records, runnerName) {
   const normalizedRequestedRunner = normalizeRunner(runnerName);
 
   const filtered = records.filter((r) => {
@@ -139,12 +141,24 @@ export function buildTask(records, runnerName) {
   const size = fields["Size"];
   const maxBid = fields["Maximum Buying Price"];
 
+  let stockxUrl = fields["StockX URL"] || null;
+
+  if (!stockxUrl) {
+    try {
+      const resolved = await resolveStockxUrlBySku(sku);
+      stockxUrl = resolved.stockxUrl;
+    } catch (err) {
+      stockxUrl = null;
+    }
+  }
+
   if (needsRemoval(fields)) {
     return {
       type: "REMOVE",
       recordId: first.id,
       sku,
-      size
+      size,
+      stockxUrl
     };
   }
 
@@ -154,7 +168,8 @@ export function buildTask(records, runnerName) {
       recordId: first.id,
       sku,
       size,
-      maxBid
+      maxBid,
+      stockxUrl
     };
   }
 
