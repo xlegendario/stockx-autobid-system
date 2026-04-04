@@ -9,7 +9,6 @@ export async function submitTaskResult(recordId, payload) {
 
   if (payload.action === "BID_CREATED") {
     return await updateOrder(recordId, {
-      "Needs StockX Bid": 0,
       BidPlaced: true,
       CurrentBid: Number.isFinite(Number(payload.maxBid))
         ? Math.floor(Number(payload.maxBid))
@@ -22,8 +21,7 @@ export async function submitTaskResult(recordId, payload) {
 
   if (payload.action === "ORDER_PLACED") {
     return await updateOrder(recordId, {
-      "Needs StockX Bid": 0,
-      "Needs StockX Removal": 0,
+      "Fulfillment Status": "StockX Processing",
       BidPlaced: false,
       CurrentBid: null,
       LastAction: "ORDER_PLACED",
@@ -34,7 +32,6 @@ export async function submitTaskResult(recordId, payload) {
 
   if (payload.type === "REMOVE") {
     return await updateOrder(recordId, {
-      "Needs StockX Removal": 0,
       BidPlaced: false,
       CurrentBid: null,
       LastAction: "BID_REMOVED",
