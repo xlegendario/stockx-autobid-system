@@ -268,4 +268,58 @@ function fillBidPrice(attempt = 0) {
   input.dispatchEvent(new Event("blur", { bubbles: true }));
 
   console.log("✅ Bid price filled");
+  setTimeout(() => {
+    clickReviewBid();
+  }, 1000);
+}
+
+function clickReviewBid(attempt = 0) {
+  if (attempt > 15) {
+    console.log("Review Bid button not found after multiple attempts");
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const btn = buttons.find((b) => {
+    const text = (b.innerText || "").trim().toLowerCase();
+    return text.includes("review bid");
+  });
+
+  if (!btn) {
+    console.log("Review Bid button not found yet, retrying...");
+    setTimeout(() => clickReviewBid(attempt + 1), 1000);
+    return;
+  }
+
+  console.log("🔥 Clicking Review Bid");
+  btn.click();
+
+  // wacht op confirm scherm en klik dan Confirm Bid
+  setTimeout(() => {
+    clickConfirmBid();
+  }, 1500);
+}
+
+function clickConfirmBid(attempt = 0) {
+  if (attempt > 15) {
+    console.log("Confirm Bid button not found after multiple attempts");
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const btn = buttons.find((b) => {
+    const text = (b.innerText || "").trim().toLowerCase();
+    return text.includes("confirm bid");
+  });
+
+  if (!btn) {
+    console.log("Confirm Bid button not found yet, retrying...");
+    setTimeout(() => clickConfirmBid(attempt + 1), 1000);
+    return;
+  }
+
+  console.log("🔥 Clicking Confirm Bid");
+  btn.click();
 }
