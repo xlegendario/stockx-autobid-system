@@ -23,14 +23,16 @@ router.get("/orders", async (req, res) => {
 
 router.post("/tasks/next", async (req, res) => {
   try {
-    const { runnerName } = req.body;
+    const runnerNameRaw = req.body.runnerName;
 
-    if (!runnerName) {
+    if (!runnerNameRaw) {
       return res.status(400).json({
         ok: false,
         error: "runnerName is required"
       });
     }
+
+    const runnerName = String(runnerNameRaw).trim().toLowerCase();
 
     const records = await fetchOrders();
     const task = buildTask(records, runnerName);
@@ -49,14 +51,16 @@ router.post("/tasks/next", async (req, res) => {
 
 router.post("/tasks/debug", async (req, res) => {
   try {
-    const { runnerName } = req.body;
+    const runnerNameRaw = req.body.runnerName;
 
-    if (!runnerName) {
+    if (!runnerNameRaw) {
       return res.status(400).json({
         ok: false,
         error: "runnerName is required"
       });
     }
+
+    const runnerName = String(runnerNameRaw).trim().toLowerCase();
 
     const records = await fetchOrders();
     const debug = debugRecords(records, runnerName);
