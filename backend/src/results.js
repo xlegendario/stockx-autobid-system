@@ -10,7 +10,9 @@ export async function submitTaskResult(recordId, payload) {
   if (payload.type === "PLACE_OR_UPDATE") {
     return await updateOrder(recordId, {
       BidPlaced: true,
-      CurrentBid: payload.maxBid,
+      CurrentBid: Number.isFinite(Number(payload.maxBid))
+        ? Math.floor(Number(payload.maxBid))
+        : null,
       LastAction: payload.action || "BID_CREATED",
       LastSyncAt: now,
       ErrorMessage: ""
