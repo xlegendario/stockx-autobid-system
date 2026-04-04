@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "StockX Autobid Runner",
+  "version": "1.0.0",
+  "description": "Runs StockX bid tasks from backend",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://stockx-autobid-system.onrender.com/*",
+    "https://stockx.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
