@@ -1,6 +1,7 @@
 import express from "express";
 import { fetchOrders } from "./airtable.js";
 import { buildTask, debugRecords } from "./tasks.js";
+import { submitTaskResult } from "./results.js";
 
 const router = express.Router();
 
@@ -69,6 +70,22 @@ router.post("/tasks/debug", async (req, res) => {
       ok: true,
       count: debug.length,
       debug
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+router.post("/tasks/:recordId/result", async (req, res) => {
+  try {
+    const result = await submitTaskResult(req.params.recordId, req.body);
+
+    res.json({
+      ok: true,
+      result
     });
   } catch (err) {
     res.status(500).json({
