@@ -13,11 +13,6 @@ function normalizeRunner(value) {
   return String(raw).trim().toLowerCase();
 }
 
-function charCodes(value) {
-  if (value === undefined || value === null) return [];
-  return Array.from(String(value)).map((ch) => ch.charCodeAt(0));
-}
-
 function isAutobidEnabled(fields) {
   const val = fields["Merchant StockX Autobid Enabled"];
 
@@ -48,6 +43,23 @@ function getSku(fields) {
   return fields["SKU (Soft)"] || fields["SKU"];
 }
 
+function getMaxBid(fields) {
+  const raw =
+    fields["Maximum Buying Price"] ??
+    fields["Max Bid"] ??
+    fields["Maximum Buying price"] ??
+    null;
+
+  if (raw === null || raw === undefined || raw === "") return null;
+
+  if (typeof raw === "number") return raw;
+
+  const cleaned = String(raw).replace(/[^\d.,-]/g, "").replace(",", ".");
+  const parsed = Number(cleaned);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function getGroupKey(fields) {
   const runner = getRunner(fields);
   const sku = getSku(fields);
@@ -62,40 +74,23 @@ export function debugRecords(records, runnerName) {
   return records.slice(0, 25).map((record) => {
     const f = record.fields;
 
-    const autobidRaw = f["Merchant StockX Autobid Enabled"];
-    const runnerRaw = f["Merchant StockX Runner Name"];
-    const needsBidValue = f["Needs StockX Bid"];
-    const needsRemovalValue = f["Needs StockX Removal"];
-
-    const autobid = isAutobidEnabled(f);
-    const runner = getRunner(f);
-    const bid = needsBid(f);
-    const removal = needsRemoval(f);
-
     return {
       recordId: record.id,
       orderId: f["Order ID"] || null,
       sku: getSku(f),
       size: f["Size"] || null,
       fulfillmentStatus: f["Fulfillment Status"] || null,
-      autobidRaw,
-      autobidParsed: autobid,
-      runnerRaw,
-      runnerParsed: runner,
-      runnerParsedLength: runner ? runner.length : null,
-      runnerParsedCodes: charCodes(runner),
+      runnerParsed: getRunner(f),
       requestedRunner: normalizedRequestedRunner,
-      requestedRunnerLength: normalizedRequestedRunner ? normalizedRequestedRunner.length : null,
-      requestedRunnerCodes: charCodes(normalizedRequestedRunner),
-      runnerMatches: runner === normalizedRequestedRunner,
-      needsBidRaw: needsBidValue,
-      needsBidParsed: bid,
-      needsRemovalRaw: needsRemovalValue,
-      needsRemovalParsed: removal,
+      runnerMatches: getRunner(f) === normalizedRequestedRunner,
+      autobidParsed: isAutobidEnabled(f),
+      needsBidParsed: needsBid(f),
+      needsRemovalParsed: needsRemoval(f),
+      maxBidParsed: getMaxBid(f),
       included:
-        autobid &&
-        runner === normalizedRequestedRunner &&
-        (bid || removal)
+        isAutobidEnabled(f) &&
+        getRunner(f) === normalizedRequestedRunner &&
+        (needsBid(f) || needsRemoval(f))
     };
   });
 }
@@ -127,19 +122,35 @@ export async function buildTask(records, runnerName) {
     groups[key].push(record);
   }
 
-  const groupKey = Object.keys(groups)[0];
-  const group = groups[groupKey];
-
-  group.sort((a, b) => {
-    return new Date(a.createdTime) - new Date(b.createdTime);
+  // sort each group oldest first
+  Object.values(groups).forEach((group) => {
+    group.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime));
   });
 
-  const first = group[0];
+  // 🔥 PRIORITY 1: PLACE_OR_UPDATE first
+  const placeGroupKey = Object.keys(groups).find((key) => {
+    const first = groups[key][0];
+    return needsBid(first.fields);
+  });
+
+  // 🔥 PRIORITY 2: REMOVE only if no place/update exists
+  const removeGroupKey =
+    !placeGroupKey &&
+    Object.keys(groups).find((key) => {
+      const first = groups[key][0];
+      return needsRemoval(first.fields);
+    });
+
+  const chosenGroupKey = placeGroupKey || removeGroupKey;
+
+  if (!chosenGroupKey) return null;
+
+  const first = groups[chosenGroupKey][0];
   const fields = first.fields;
 
   const sku = getSku(fields);
   const size = fields["Size"];
-  const maxBid = fields["Maximum Buying Price"];
+  const maxBid = getMaxBid(fields);
 
   let stockxUrl = fields["StockX URL"] || null;
 
@@ -152,16 +163,6 @@ export async function buildTask(records, runnerName) {
     }
   }
 
-  if (needsRemoval(fields)) {
-    return {
-      type: "REMOVE",
-      recordId: first.id,
-      sku,
-      size,
-      stockxUrl
-    };
-  }
-
   if (needsBid(fields)) {
     return {
       type: "PLACE_OR_UPDATE",
@@ -169,6 +170,16 @@ export async function buildTask(records, runnerName) {
       sku,
       size,
       maxBid,
+      stockxUrl
+    };
+  }
+
+  if (needsRemoval(fields)) {
+    return {
+      type: "REMOVE",
+      recordId: first.id,
+      sku,
+      size,
       stockxUrl
     };
   }
