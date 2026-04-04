@@ -11,6 +11,11 @@ function normalizeRunner(value) {
   return String(raw).trim().toLowerCase();
 }
 
+function charCodes(value) {
+  if (value === undefined || value === null) return [];
+  return Array.from(String(value)).map((ch) => ch.charCodeAt(0));
+}
+
 function isAutobidEnabled(fields) {
   const val = fields["Merchant StockX Autobid Enabled"];
 
@@ -30,11 +35,11 @@ function getRunner(fields) {
 }
 
 function needsBid(fields) {
-  return fields["Needs StockX Bid"] === 1;
+  return Number(fields["Needs StockX Bid"]) === 1;
 }
 
 function needsRemoval(fields) {
-  return fields["Needs StockX Removal"] === 1;
+  return Number(fields["Needs StockX Removal"]) === 1;
 }
 
 function getSku(fields) {
@@ -75,7 +80,11 @@ export function debugRecords(records, runnerName) {
       autobidParsed: autobid,
       runnerRaw,
       runnerParsed: runner,
+      runnerParsedLength: runner ? runner.length : null,
+      runnerParsedCodes: charCodes(runner),
       requestedRunner: normalizedRequestedRunner,
+      requestedRunnerLength: normalizedRequestedRunner ? normalizedRequestedRunner.length : null,
+      requestedRunnerCodes: charCodes(normalizedRequestedRunner),
       runnerMatches: runner === normalizedRequestedRunner,
       needsBidRaw: needsBidValue,
       needsBidParsed: bid,
