@@ -2,8 +2,8 @@ import { CONFIG } from "./config.js";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "FETCH_NEXT_TASK") {
-    fetchNextTask()
-      .then((task) => sendResponse(task))
+    handleTask()
+      .then((result) => sendResponse(result))
       .catch((err) => {
         sendResponse({
           ok: false,
@@ -14,6 +14,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+async function handleTask() {
+  const taskData = await fetchNextTask();
+
+  if (!taskData.task) {
+    return {
+      ok: true,
+      message: "No task available"
+    };
+  }
+
+  const task = taskData.task;
+
+  // 🔥 OPEN STOCKX PAGE
+  const url = buildStockXUrl(task);
+
+  await chrome.tabs.create({
+    url
+  });
+
+  return {
+    ok: true,
+    task,
+    openedUrl: url
+  };
+}
 
 async function fetchNextTask() {
   const res = await fetch(`${CONFIG.BACKEND_URL}/tasks/next`, {
@@ -29,8 +55,16 @@ async function fetchNextTask() {
   const data = await res.json();
 
   if (!data.ok) {
-    throw new Error(data.error || "Unknown backend error");
+    throw new Error(data.error || "Backend error");
   }
 
   return data;
+}
+
+// 🔥 VERY IMPORTANT FUNCTION
+function buildStockXUrl(task) {
+  const sku = task.sku;
+
+  // tijdelijk: search via SKU
+  return `https://stockx.com/search?s=${sku}`;
 }
