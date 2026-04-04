@@ -2,7 +2,6 @@ console.log("StockX Autobid content script loaded");
 
 let currentTask = null;
 
-// 🔥 Luister naar task van service worker
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "NEW_TASK") {
     currentTask = message.task;
@@ -10,7 +9,7 @@ chrome.runtime.onMessage.addListener((message) => {
 
     setTimeout(() => {
       handleTask();
-    }, 2000); // kleine delay zodat page volledig geladen is
+    }, 2000);
   }
 });
 
@@ -23,31 +22,65 @@ function handleTask() {
 
   console.log("Handling task:", currentTask);
 
-  selectSize(currentTask.size);
+  openSizeDropdownAndSelect(currentTask.size);
 }
 
-function selectSize(targetSize) {
-  console.log("Trying to select size:", targetSize);
+function normalizeText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(",", ".");
+}
 
-  const buttons = document.querySelectorAll("button");
+function openSizeDropdownAndSelect(targetSize) {
+  console.log("Trying to open size dropdown for:", targetSize);
 
-  let found = false;
+  const buttons = Array.from(document.querySelectorAll("button"));
 
-  buttons.forEach((btn) => {
-    const text = btn.innerText.trim();
-
-    if (!text) return;
-
-    // match EU sizes (StockX format)
-    if (text.includes(targetSize)) {
-      console.log("Clicking size button:", text);
-      btn.click();
-      found = true;
-    }
+  const dropdownButton = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text.includes("eu ") || text === "size:" || text.includes("size");
   });
 
-  if (!found) {
-    console.log("Size not found yet, retrying...");
-    setTimeout(() => selectSize(targetSize), 1000);
+  if (!dropdownButton) {
+    console.log("Size dropdown not found yet, retrying...");
+    setTimeout(() => openSizeDropdownAndSelect(targetSize), 1000);
+    return;
   }
+
+  console.log("Clicking size dropdown:", dropdownButton.innerText);
+  dropdownButton.click();
+
+  setTimeout(() => {
+    selectSizeFromDropdown(targetSize);
+  }, 1000);
+}
+
+function selectSizeFromDropdown(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+  console.log("Trying to select size from dropdown:", normalizedTarget);
+
+  const allButtons = Array.from(document.querySelectorAll("button"));
+  const allDivs = Array.from(document.querySelectorAll("div"));
+  const allSpans = Array.from(document.querySelectorAll("span"));
+
+  const candidates = [...allButtons, ...allDivs, ...allSpans];
+
+  const match = candidates.find((el) => {
+    const text = normalizeText(el.innerText);
+    return (
+      text === normalizedTarget ||
+      text === `eu ${normalizedTarget}` ||
+      text.includes(`eu ${normalizedTarget}`)
+    );
+  });
+
+  if (!match) {
+    console.log("Size option not found yet, retrying...");
+    setTimeout(() => selectSizeFromDropdown(targetSize), 1000);
+    return;
+  }
+
+  console.log("Clicking size option:", match.innerText);
+  match.click();
 }
