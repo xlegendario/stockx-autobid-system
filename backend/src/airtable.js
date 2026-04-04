@@ -38,10 +38,24 @@ export async function fetchOrders() {
     }
 
     const data = await res.json();
-
     allRecords = allRecords.concat(data.records || []);
     offset = data.offset || null;
   } while (offset);
 
   return allRecords;
+}
+
+export async function updateOrder(recordId, fields) {
+  const res = await fetch(`${BASE_URL}/${recordId}`, {
+    method: "PATCH",
+    headers: headers(),
+    body: JSON.stringify({ fields })
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Airtable update failed: ${res.status} ${text}`);
+  }
+
+  return await res.json();
 }
