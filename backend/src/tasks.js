@@ -27,6 +27,16 @@ function isAutobidEnabled(fields) {
   return val === true || val === 1 || val === "1" || val === "true";
 }
 
+function hasBidPlaced(fields) {
+  const raw = fields["BidPlaced"];
+
+  if (raw === true) return true;
+  if (raw === 1) return true;
+  if (raw === "1") return true;
+
+  return false;
+}
+
 function getRunner(fields) {
   return normalizeRunner(fields["Merchant StockX Runner Name"]);
 }
@@ -36,7 +46,7 @@ function needsBid(fields) {
 }
 
 function needsRemoval(fields) {
-  return Number(fields["Needs StockX Removal"]) === 1;
+  return Number(fields["Needs StockX Removal"]) === 1 && hasBidPlaced(fields);
 }
 
 function getSku(fields) {
@@ -71,7 +81,7 @@ function getGroupKey(fields) {
 export function debugRecords(records, runnerName) {
   const normalizedRequestedRunner = normalizeRunner(runnerName);
 
-  return records.slice(0, 25).map((record) => {
+  return records.map((record) => {
     const f = record.fields;
 
     return {
@@ -84,6 +94,7 @@ export function debugRecords(records, runnerName) {
       requestedRunner: normalizedRequestedRunner,
       runnerMatches: getRunner(f) === normalizedRequestedRunner,
       autobidParsed: isAutobidEnabled(f),
+      bidPlacedParsed: hasBidPlaced(f),
       needsBidParsed: needsBid(f),
       needsRemovalParsed: needsRemoval(f),
       maxBidParsed: getMaxBid(f),
@@ -117,37 +128,42 @@ export async function buildTask(records, runnerName) {
 
   for (const record of filtered) {
     const key = getGroupKey(record.fields);
-
     if (!groups[key]) groups[key] = [];
     groups[key].push(record);
   }
 
-  // sort each group oldest first
+  // Sorteer oudste eerst binnen iedere group
   Object.values(groups).forEach((group) => {
     group.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime));
   });
 
-  // 🔥 PRIORITY 1: PLACE_OR_UPDATE first
-  const placeGroupKey = Object.keys(groups).find((key) => {
-    const first = groups[key][0];
-    return needsBid(first.fields);
-  });
+  // Eerst alle PLACE/UPDATE candidates verzamelen
+  const placeCandidates = [];
+  const removeCandidates = [];
 
-  // 🔥 PRIORITY 2: REMOVE only if no place/update exists
-  const removeGroupKey =
-    !placeGroupKey &&
-    Object.keys(groups).find((key) => {
-      const first = groups[key][0];
-      return needsRemoval(first.fields);
-    });
+  for (const key of Object.keys(groups)) {
+    const group = groups[key];
 
-  const chosenGroupKey = placeGroupKey || removeGroupKey;
+    const firstPlace = group.find((record) => needsBid(record.fields));
+    if (firstPlace) {
+      placeCandidates.push(firstPlace);
+      continue;
+    }
 
-  if (!chosenGroupKey) return null;
+    const firstRemove = group.find((record) => needsRemoval(record.fields));
+    if (firstRemove) {
+      removeCandidates.push(firstRemove);
+    }
+  }
 
-  const first = groups[chosenGroupKey][0];
-  const fields = first.fields;
+  // Prioriteit: PLACE_OR_UPDATE boven REMOVE
+  const chosen =
+    placeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0] ||
+    removeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
 
+  if (!chosen) return null;
+
+  const fields = chosen.fields;
   const sku = getSku(fields);
   const size = fields["Size"];
   const maxBid = getMaxBid(fields);
@@ -158,7 +174,7 @@ export async function buildTask(records, runnerName) {
     try {
       const resolved = await resolveStockxUrlBySku(sku);
       stockxUrl = resolved.stockxUrl;
-    } catch (err) {
+    } catch {
       stockxUrl = null;
     }
   }
@@ -166,7 +182,7 @@ export async function buildTask(records, runnerName) {
   if (needsBid(fields)) {
     return {
       type: "PLACE_OR_UPDATE",
-      recordId: first.id,
+      recordId: chosen.id,
       sku,
       size,
       maxBid,
@@ -177,7 +193,7 @@ export async function buildTask(records, runnerName) {
   if (needsRemoval(fields)) {
     return {
       type: "REMOVE",
-      recordId: first.id,
+      recordId: chosen.id,
       sku,
       size,
       stockxUrl
