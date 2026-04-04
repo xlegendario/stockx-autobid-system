@@ -30,9 +30,17 @@ async function handleTask() {
   // 🔥 OPEN STOCKX PAGE
   const url = buildStockXUrl(task);
 
-  await chrome.tabs.create({
+  const tab = await chrome.tabs.create({
     url
   });
+  
+  // 🔥 wacht tot tab geladen is en stuur task
+  setTimeout(() => {
+    chrome.tabs.sendMessage(tab.id, {
+      type: "NEW_TASK",
+      task
+    });
+  }, 3000);
 
   return {
     ok: true,
