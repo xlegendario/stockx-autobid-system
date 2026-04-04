@@ -1,0 +1,14 @@
+{
+  "name": "stockx-bid-backend",
+  "version": "1.0.0",
+  "description": "Backend for StockX bidding automation",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
