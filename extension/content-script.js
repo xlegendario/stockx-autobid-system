@@ -33,18 +33,28 @@ function normalizeText(value) {
 }
 
 function openSizeDropdownAndSelect(targetSize) {
-  console.log("Trying to open size dropdown for:", targetSize);
+  console.log("Checking current selected size...");
+
+  const normalizedTarget = normalizeText(targetSize);
 
   const buttons = Array.from(document.querySelectorAll("button"));
 
   const dropdownButton = buttons.find((btn) => {
     const text = normalizeText(btn.innerText);
-    return text.includes("eu ") || text === "size:" || text.includes("size");
+    return text.includes("eu ");
   });
 
   if (!dropdownButton) {
     console.log("Size dropdown not found yet, retrying...");
     setTimeout(() => openSizeDropdownAndSelect(targetSize), 1000);
+    return;
+  }
+
+  const currentText = normalizeText(dropdownButton.innerText);
+
+  // 🔥 CHECK IF ALREADY SELECTED
+  if (currentText.includes(normalizedTarget)) {
+    console.log("Size already selected:", currentText);
     return;
   }
 
