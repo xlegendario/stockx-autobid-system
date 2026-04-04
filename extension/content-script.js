@@ -244,6 +244,13 @@ function formatBidValue(value) {
   return String(Math.floor(num));
 }
 
+function normalizeNumericString(value) {
+  return String(value || "")
+    .replace(/[^\d.,]/g, "")
+    .replace(",", ".")
+    .trim();
+}
+
 function fillBidPrice(attempt = 0) {
   if (!currentTask) {
     console.log("No currentTask for fillBidPrice");
@@ -274,17 +281,23 @@ function fillBidPrice(attempt = 0) {
 
   input.focus();
 
-  // clear
-  input.value = "";
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-
-  // React-safe setter
   const nativeSetter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
     "value"
   )?.set;
 
+  // clear first
+  if (nativeSetter) {
+    nativeSetter.call(input, "");
+  } else {
+    input.value = "";
+  }
+
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  input.dispatchEvent(new Event("blur", { bubbles: true }));
+
+  // fill desired bid
   if (nativeSetter) {
     nativeSetter.call(input, bidValue);
   } else {
@@ -295,28 +308,20 @@ function fillBidPrice(attempt = 0) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
   input.dispatchEvent(new Event("blur", { bubbles: true }));
 
-  // Sometimes StockX needs a second pass
   setTimeout(() => {
-    const currentVal = String(input.value || "").trim();
+    const currentVal = normalizeNumericString(input.value);
+    const expectedVal = normalizeNumericString(bidValue);
+
     console.log("Input value after fill attempt:", currentVal);
+    console.log("Expected bid value:", expectedVal);
 
-    // if not accepted properly, try once more
-    if (!currentVal || currentVal === "0") {
-      console.log("Input still empty/invalid, retrying fill...");
-
-      input.focus();
-
-      if (nativeSetter) {
-        nativeSetter.call(input, bidValue);
-      } else {
-        input.value = bidValue;
-      }
-
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.dispatchEvent(new Event("blur", { bubbles: true }));
+    if (currentVal !== expectedVal) {
+      console.log("❌ Bid value mismatch, retrying fill...");
+      setTimeout(() => fillBidPrice(attempt + 1), 1000);
+      return;
     }
 
+    console.log("✅ Bid input matches expected value");
     waitForReviewBidEnabled();
   }, 1200);
 }
