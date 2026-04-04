@@ -154,9 +154,13 @@ function handleBuyPage(attempt = 0) {
     return;
   }
 
-  // If we're already on the price form, skip size tile selection
+  // Alleen direct naar price form als er OOK een Review Bid knop zichtbaar is
   const priceInput = findBidInput();
-  if (priceInput) {
+  const hasReviewBidButton = Array.from(document.querySelectorAll("button")).some((btn) =>
+    (btn.innerText || "").trim().toLowerCase().includes("review bid")
+  );
+
+  if (priceInput && hasReviewBidButton) {
     console.log("Bid input screen detected directly");
     setTimeout(() => fillBidPrice(), 800);
     return;
@@ -203,15 +207,30 @@ function findBidInput() {
   return inputs.find((input) => {
     const type = (input.getAttribute("type") || "").toLowerCase();
     const inputMode = (input.getAttribute("inputmode") || "").toLowerCase();
-    const value = input.value || "";
+    const placeholder = (input.getAttribute("placeholder") || "").toLowerCase();
+    const ariaLabel = (input.getAttribute("aria-label") || "").toLowerCase();
 
-    return (
-      type === "text" ||
+    const rect = input.getBoundingClientRect();
+    const isVisible =
+      rect.width > 0 &&
+      rect.height > 0 &&
+      window.getComputedStyle(input).visibility !== "hidden" &&
+      window.getComputedStyle(input).display !== "none";
+
+    if (!isVisible) return false;
+
+    const looksNumeric =
       type === "number" ||
       inputMode === "numeric" ||
-      inputMode === "decimal" ||
-      value.length > 0
-    );
+      inputMode === "decimal";
+
+    const looksLikeBidField =
+      placeholder.includes("price") ||
+      placeholder.includes("bid") ||
+      ariaLabel.includes("price") ||
+      ariaLabel.includes("bid");
+
+    return looksNumeric || looksLikeBidField;
   });
 }
 
