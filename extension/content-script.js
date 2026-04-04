@@ -39,6 +39,11 @@ window.addEventListener("load", async () => {
 function handleTask() {
   if (!currentTask) return;
 
+  if (currentTask.type !== "PLACE_OR_UPDATE") {
+    console.log("Not a PLACE_OR_UPDATE task, skipping placement flow");
+    return;
+  }
+
   console.log("Handling task:", currentTask);
   openSizeDropdownAndSelect(currentTask.size);
 }
