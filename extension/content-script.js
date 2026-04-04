@@ -13,15 +13,33 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-window.addEventListener("load", () => {
+window.addEventListener("load", async () => {
   console.log("Page loaded:", window.location.href);
+
+  const stored = await chrome.storage.local.get("currentTask");
+  currentTask = stored.currentTask || null;
+
+  if (!currentTask) {
+    console.log("No currentTask in storage");
+    return;
+  }
+
+  if (window.location.pathname.includes("/buy/")) {
+    setTimeout(() => {
+      handleBuyPage();
+    }, 1500);
+    return;
+  }
+
+  setTimeout(() => {
+    handleTask();
+  }, 2000);
 });
 
 function handleTask() {
   if (!currentTask) return;
 
   console.log("Handling task:", currentTask);
-
   openSizeDropdownAndSelect(currentTask.size);
 }
 
@@ -29,6 +47,7 @@ function normalizeText(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
+    .replace(/\s+/g, " ")
     .replace(",", ".");
 }
 
@@ -45,6 +64,23 @@ function openSizeDropdownAndSelect(targetSize) {
   if (!dropdownButton) {
     console.log("Size dropdown not found yet, retrying...");
     setTimeout(() => openSizeDropdownAndSelect(targetSize), 1000);
+    return;
+  }
+
+  const currentText = normalizeText(dropdownButton.innerText);
+  const normalizedTarget = normalizeText(targetSize);
+
+  if (
+    currentText === normalizedTarget ||
+    currentText === `eu ${normalizedTarget}` ||
+    currentText.includes(`eu ${normalizedTarget}`)
+  ) {
+    console.log("Size already selected:", dropdownButton.innerText);
+
+    setTimeout(() => {
+      goToOfferPage(targetSize);
+    }, 800);
+
     return;
   }
 
@@ -83,4 +119,136 @@ function selectSizeFromDropdown(targetSize) {
 
   console.log("Clicking size option:", match.innerText);
   match.click();
+
+  setTimeout(() => {
+    goToOfferPage(targetSize);
+  }, 1200);
+}
+
+function goToOfferPage(size) {
+  const currentUrl = new URL(window.location.href);
+  const slug = currentUrl.pathname.replace(/^\/+/, "");
+
+  if (!slug) {
+    console.log("Could not determine product slug from URL");
+    return;
+  }
+
+  const offerUrl = `https://stockx.com/buy/${slug}?defaultBid=true&size=${encodeURIComponent(String(size).trim())}`;
+
+  console.log("🔥 Navigating directly to offer page:", offerUrl);
+  window.location.href = offerUrl;
+}
+
+function handleBuyPage(attempt = 0) {
+  if (!currentTask) {
+    console.log("No currentTask available on buy page");
+    return;
+  }
+
+  // If we're already on the price form, skip size tile selection
+  const priceInput = findBidInput();
+  if (priceInput) {
+    console.log("Bid input screen detected directly");
+    setTimeout(() => fillBidPrice(), 800);
+    return;
+  }
+
+  if (attempt > 20) {
+    console.log("BUY page size not found after multiple attempts");
+    return;
+  }
+
+  console.log("📍 On BUY page, selecting size again...");
+
+  const targetSize = normalizeText(currentTask.size);
+
+  const candidates = Array.from(
+    document.querySelectorAll("button, [role='button'], li, span, p, div")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
+    if (!text) return false;
+    if (text.length > 20) return false;
+
+    return text === `eu ${targetSize}` || text === targetSize;
+  });
+
+  if (candidates.length === 0) {
+    console.log("Buy page size not found yet, retrying...");
+    setTimeout(() => handleBuyPage(attempt + 1), 800);
+    return;
+  }
+
+  const match = candidates[0];
+
+  console.log("🔥 Clicking BUY page size:", match.innerText);
+  match.click();
+
+  setTimeout(() => {
+    fillBidPrice();
+  }, 1500);
+}
+
+function findBidInput() {
+  const inputs = Array.from(document.querySelectorAll("input"));
+
+  return inputs.find((input) => {
+    const type = (input.getAttribute("type") || "").toLowerCase();
+    const inputMode = (input.getAttribute("inputmode") || "").toLowerCase();
+    const value = input.value || "";
+
+    return (
+      type === "text" ||
+      type === "number" ||
+      inputMode === "numeric" ||
+      inputMode === "decimal" ||
+      value.length > 0
+    );
+  });
+}
+
+function fillBidPrice(attempt = 0) {
+  if (!currentTask) {
+    console.log("No currentTask for fillBidPrice");
+    return;
+  }
+
+  if (attempt > 15) {
+    console.log("Could not find bid input after multiple attempts");
+    return;
+  }
+
+  const input = findBidInput();
+
+  if (!input) {
+    console.log("Bid input not found yet, retrying...");
+    setTimeout(() => fillBidPrice(attempt + 1), 800);
+    return;
+  }
+
+  const bidValue = String(currentTask.maxBid).trim();
+
+  console.log("🔥 Filling bid price:", bidValue);
+
+  input.focus();
+  input.value = "";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+
+  input.value = bidValue;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+
+  // extra insurance for React-controlled inputs
+  const nativeSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value"
+  )?.set;
+
+  if (nativeSetter) {
+    nativeSetter.call(input, bidValue);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  console.log("✅ Bid price filled");
 }
