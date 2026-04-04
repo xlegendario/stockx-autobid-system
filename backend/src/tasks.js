@@ -3,6 +3,14 @@ function normalizeLookup(value) {
   return value;
 }
 
+function normalizeRunner(value) {
+  const raw = normalizeLookup(value);
+
+  if (raw === undefined || raw === null) return null;
+
+  return String(raw).trim().toLowerCase();
+}
+
 function isAutobidEnabled(fields) {
   const val = fields["Merchant StockX Autobid Enabled"];
 
@@ -18,7 +26,7 @@ function isAutobidEnabled(fields) {
 }
 
 function getRunner(fields) {
-  return normalizeLookup(fields["Merchant StockX Runner Name"]);
+  return normalizeRunner(fields["Merchant StockX Runner Name"]);
 }
 
 function needsBid(fields) {
@@ -42,6 +50,8 @@ function getGroupKey(fields) {
 }
 
 export function debugRecords(records, runnerName) {
+  const normalizedRequestedRunner = normalizeRunner(runnerName);
+
   return records.slice(0, 25).map((record) => {
     const f = record.fields;
 
@@ -65,28 +75,30 @@ export function debugRecords(records, runnerName) {
       autobidParsed: autobid,
       runnerRaw,
       runnerParsed: runner,
-      requestedRunner: runnerName,
-      runnerMatches: runner === runnerName,
+      requestedRunner: normalizedRequestedRunner,
+      runnerMatches: runner === normalizedRequestedRunner,
       needsBidRaw: needsBidValue,
       needsBidParsed: bid,
       needsRemovalRaw: needsRemovalValue,
       needsRemovalParsed: removal,
       included:
         autobid &&
-        runner === runnerName &&
+        runner === normalizedRequestedRunner &&
         (bid || removal)
     };
   });
 }
 
 export function buildTask(records, runnerName) {
+  const normalizedRequestedRunner = normalizeRunner(runnerName);
+
   const filtered = records.filter((r) => {
     const f = r.fields;
 
     if (!isAutobidEnabled(f)) return false;
 
     const runner = getRunner(f);
-    if (runner !== runnerName) return false;
+    if (runner !== normalizedRequestedRunner) return false;
 
     if (!needsBid(f) && !needsRemoval(f)) return false;
 
