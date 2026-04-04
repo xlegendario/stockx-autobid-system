@@ -1,27 +1,47 @@
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 const TABLE_NAME = process.env.AIRTABLE_TABLE_NAME;
 const TOKEN = process.env.AIRTABLE_TOKEN;
+const VIEW_NAME = process.env.AIRTABLE_VIEW_NAME;
 
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_NAME)}`;
 
 function headers() {
   return {
-    "Authorization": `Bearer ${TOKEN}`,
+    Authorization: `Bearer ${TOKEN}`,
     "Content-Type": "application/json"
   };
 }
 
 export async function fetchOrders() {
-  const res = await fetch(BASE_URL, {
-    method: "GET",
-    headers: headers()
-  });
+  let allRecords = [];
+  let offset = null;
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Airtable fetch failed: ${res.status} ${text}`);
-  }
+  do {
+    const url = new URL(BASE_URL);
 
-  const data = await res.json();
-  return data.records || [];
+    if (VIEW_NAME) {
+      url.searchParams.set("view", VIEW_NAME);
+    }
+
+    if (offset) {
+      url.searchParams.set("offset", offset);
+    }
+
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: headers()
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Airtable fetch failed: ${res.status} ${text}`);
+    }
+
+    const data = await res.json();
+
+    allRecords = allRecords.concat(data.records || []);
+    offset = data.offset || null;
+  } while (offset);
+
+  return allRecords;
 }
