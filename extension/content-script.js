@@ -434,36 +434,37 @@ function clickConfirmBid(attempt = 0) {
     return;
   }
 
-  console.log("🔥 Clicking final submit button:", btn.innerText);
+  const finalButtonText = (btn.innerText || "").trim();
+
+  console.log("🔥 Clicking final submit button:", finalButtonText);
   clickElement(btn);
 
   setTimeout(() => {
-    reportTaskSuccess(btn.innerText);
+    waitForFinalOutcome(finalButtonText);
   }, 2500);
 }
 
-function reportTaskSuccess(finalButtonText = "") {
+function getPageText() {
+  return (document.body?.innerText || "").toLowerCase();
+}
+
+function reportTaskResult(action, extra = {}) {
   if (!currentTask) {
-    console.log("No currentTask available to report success");
+    console.log("No currentTask available to report result");
     return;
   }
 
   const submittedBid = Number(formatBidValue(currentTask.maxBid));
-  const normalizedFinal = String(finalButtonText || "").trim().toLowerCase();
-
-  const action =
-    normalizedFinal.includes("place order")
-      ? "ORDER_PLACED"
-      : "BID_CREATED";
 
   const payload = {
     recordId: currentTask.recordId,
     type: currentTask.type,
     maxBid: submittedBid,
-    action
+    action,
+    ...extra
   };
 
-  console.log("✅ Reporting task success:", payload);
+  console.log("✅ Reporting task result:", payload);
 
   chrome.runtime.sendMessage(
     {
@@ -478,4 +479,69 @@ function reportTaskSuccess(finalButtonText = "") {
       }, 1000);
     }
   );
+}
+
+function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
+  if (attempt > 20) {
+    console.log("Final outcome not detected after multiple attempts");
+
+    // fallback: use button type if nothing else detected
+    const normalized = String(finalButtonText || "").trim().toLowerCase();
+
+    if (normalized.includes("place order")) {
+      reportTaskResult("ORDER_PLACED_FALLBACK", {
+        errorMessage: "No success/failure screen detected after Place Order"
+      });
+      return;
+    }
+
+    if (normalized.includes("confirm bid")) {
+      reportTaskResult("BID_CREATED_FALLBACK", {
+        errorMessage: "No success/failure screen detected after Confirm Bid"
+      });
+      return;
+    }
+
+    return;
+  }
+
+  const pageText = getPageText();
+
+  // ORDER SUCCESS
+  if (
+    pageText.includes("your order has been placed successfully") ||
+    pageText.includes("congratulations! your order has been placed successfully")
+  ) {
+    console.log("✅ Order success page detected");
+    reportTaskResult("ORDER_PLACED");
+    return;
+  }
+
+  // BID SUCCESS
+  if (
+    pageText.includes("your bid is live") ||
+    pageText.includes("success") && pageText.includes("your bid")
+  ) {
+    console.log("✅ Bid success page detected");
+    reportTaskResult("BID_CREATED");
+    return;
+  }
+
+  // PAYMENT / FUNDS FAILURE
+  if (
+    pageText.includes("there was an error with your payment method") ||
+    pageText.includes("please enter a new payment method and try again") ||
+    pageText.includes("payment method")
+  ) {
+    console.log("❌ Payment failure / no funds detected");
+    reportTaskResult("NO_FUNDS", {
+      errorMessage: "Payment method declined or insufficient balance"
+    });
+    return;
+  }
+
+  console.log("Waiting for final outcome...");
+  setTimeout(() => {
+    waitForFinalOutcome(finalButtonText, attempt + 1);
+  }, 1500);
 }
