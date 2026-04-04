@@ -207,6 +207,15 @@ function findBidInput() {
   });
 }
 
+function formatBidValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "";
+
+  return String(num).replace(".", ",");
+}
+
 function fillBidPrice(attempt = 0) {
   if (!currentTask) {
     console.log("No currentTask for fillBidPrice");
@@ -228,17 +237,20 @@ function fillBidPrice(attempt = 0) {
 
   const bidValue = formatBidValue(currentTask.maxBid);
 
+  if (!bidValue) {
+    console.log("No valid maxBid available on task");
+    return;
+  }
+
   console.log("🔥 Filling bid price:", bidValue);
 
   input.focus();
+
+  // clear existing value
   input.value = "";
   input.dispatchEvent(new Event("input", { bubbles: true }));
 
-  input.value = bidValue;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-
-  // extra insurance for React-controlled inputs
+  // React-safe setter
   const nativeSetter = Object.getOwnPropertyDescriptor(
     window.HTMLInputElement.prototype,
     "value"
@@ -246,9 +258,13 @@ function fillBidPrice(attempt = 0) {
 
   if (nativeSetter) {
     nativeSetter.call(input, bidValue);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+  } else {
+    input.value = bidValue;
   }
+
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  input.dispatchEvent(new Event("blur", { bubbles: true }));
 
   console.log("✅ Bid price filled");
 }
