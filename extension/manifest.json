@@ -14,5 +14,11 @@
   },
   "action": {
     "default_popup": "popup.html"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://stockx.com/*"],
+      "js": ["content-script.js"]
+    }
+  ]
 }
