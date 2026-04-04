@@ -1,6 +1,6 @@
 import express from "express";
 import { fetchOrders } from "./airtable.js";
-import { buildTask } from "./tasks.js";
+import { buildTask, debugRecords } from "./tasks.js";
 
 const router = express.Router();
 
@@ -33,12 +33,38 @@ router.post("/tasks/next", async (req, res) => {
     }
 
     const records = await fetchOrders();
-
     const task = buildTask(records, runnerName);
 
     res.json({
       ok: true,
       task
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+router.post("/tasks/debug", async (req, res) => {
+  try {
+    const { runnerName } = req.body;
+
+    if (!runnerName) {
+      return res.status(400).json({
+        ok: false,
+        error: "runnerName is required"
+      });
+    }
+
+    const records = await fetchOrders();
+    const debug = debugRecords(records, runnerName);
+
+    res.json({
+      ok: true,
+      count: debug.length,
+      debug
     });
   } catch (err) {
     res.status(500).json({
