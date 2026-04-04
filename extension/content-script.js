@@ -443,6 +443,11 @@ function reportTaskSuccess() {
     },
     (response) => {
       console.log("Backend result response:", response);
+  
+      // 🔥 SLUIT TAB NA SUCCESS
+      setTimeout(() => {
+        window.close();
+      }, 1000);
     }
   );
 }
