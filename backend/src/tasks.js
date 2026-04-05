@@ -103,6 +103,7 @@ export function debugRecords(records, runnerName) {
       fulfillmentStatus: f["Fulfillment Status"] || null,
       runnerParsed: getRunner(f),
       accountGroupParsed: getAccountGroupKey(f),
+      blockingKey: getBlockingKey(f),
       requestedRunner: normalizedRequestedRunner,
       runnerMatches: getRunner(f) === normalizedRequestedRunner,
       autobidParsed: isAutobidEnabled(f),
@@ -118,19 +119,48 @@ export function debugRecords(records, runnerName) {
   });
 }
 
-export async function buildTask(records, runnerName) {
+function getAccountGroupKey(fields) {
+  const raw = normalizeLookup(fields["Merchant StockX Account Group Key"]);
+
+  if (raw === undefined || raw === null || raw === "") {
+    return getRunner(fields);
+  }
+
+  return String(raw).trim().toLowerCase();
+}
+
+function getBlockingKey(fields) {
+  const accountGroup = getAccountGroupKey(fields);
+  const sku = getSku(fields);
+  const size = fields["Size"];
+
+  return `${accountGroup}|${sku}|${size}`;
+}
+
+export async function buildTask(records, runnerName, activeBidRecords = []) {
   const normalizedRequestedRunner = normalizeRunner(runnerName);
+  const activeBidKeys = new Set(
+    activeBidRecords
+      .map((record) => getBlockingKey(record.fields))
+      .filter(Boolean)
+  );
 
   const filtered = records.filter((r) => {
     const f = r.fields;
-
+  
     if (!isAutobidEnabled(f)) return false;
-
+  
     const runner = getRunner(f);
     if (runner !== normalizedRequestedRunner) return false;
-
+  
     if (!needsBid(f) && !needsRemoval(f)) return false;
-
+  
+    // Block new bid placement if same account-group + sku + size already has active bid
+    if (needsBid(f)) {
+      const key = getBlockingKey(f);
+      if (activeBidKeys.has(key)) return false;
+    }
+  
     return true;
   });
 
