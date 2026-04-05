@@ -141,7 +141,20 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     if (!isAutobidEnabled(f)) return false;
   
     const runner = getRunner(f);
-    if (runner !== normalizedRequestedRunner) return false;
+    const accountGroup = getAccountGroupKey(f);
+    const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
+  
+    // MAIN_ACCOUNT records route by account group
+    if (accountMode === "MAIN_ACCOUNT") {
+      if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
+        return false;
+      }
+    } else {
+      // DEDICATED_ACCOUNT route by runner
+      if (runner !== normalizedRequestedRunner) {
+        return false;
+      }
+    }
   
     if (!needsBid(f) && !needsRemoval(f)) return false;
   
