@@ -243,6 +243,230 @@ function clickUpdateButtonForRemove(attempt = 0) {
 
   console.log("🧹 Clicking Update button:", updateBtn.innerText);
   clickElement(updateBtn);
+  
+  setTimeout(() => {
+    waitForRemoveEditPage();
+  }, 2000);
+}
+
+function waitForRemoveEditPage(attempt = 0) {
+  console.log("🧹 Waiting for remove edit page...");
+
+  if (attempt > 15) {
+    reportTaskResult("BID_REMOVE_FAILED", {
+      errorMessage: "Update clicked but edit page did not load"
+    });
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+  const pageText = getPageText();
+
+  const deleteBtn = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text === "delete bid" || text.includes("delete bid");
+  });
+
+  if (deleteBtn) {
+    console.log("🧹 Remove edit page detected via Delete Bid button");
+    clickDeleteBidButtonForRemove();
+    return;
+  }
+
+  const looksLikeEditPage =
+    pageText.includes("delete bid") ||
+    pageText.includes("review bid") ||
+    pageText.includes("bid") && pageText.includes("sell faster");
+
+  if (looksLikeEditPage) {
+    console.log("🧹 Edit-like page detected, retrying for Delete Bid button...");
+  } else {
+    console.log("🧹 Edit page not ready yet, retrying...");
+  }
+
+  setTimeout(() => {
+    waitForRemoveEditPage(attempt + 1);
+  }, 1000);
+}
+
+function clickDeleteBidButtonForRemove(attempt = 0) {
+  console.log("🧹 Trying to click Delete Bid...");
+
+  if (attempt > 15) {
+    reportTaskResult("BID_REMOVE_FAILED", {
+      errorMessage: "Delete Bid button not found on edit page"
+    });
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const deleteBtn = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text === "delete bid" || text.includes("delete bid");
+  });
+
+  if (!deleteBtn) {
+    console.log("🧹 Delete Bid button not found yet, retrying...");
+    setTimeout(() => {
+      clickDeleteBidButtonForRemove(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  const isDisabled =
+    deleteBtn.disabled ||
+    deleteBtn.getAttribute("aria-disabled") === "true";
+
+  if (isDisabled) {
+    console.log("🧹 Delete Bid button is disabled, waiting...");
+    setTimeout(() => {
+      clickDeleteBidButtonForRemove(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  console.log("🧹 Clicking Delete Bid:", deleteBtn.innerText);
+  clickElement(deleteBtn);
+  
+  setTimeout(() => {
+    waitForReturnToProductPageAfterRemove();
+  }, 2000);
+}
+
+function waitForReturnToProductPageAfterRemove(attempt = 0) {
+  console.log("🧹 Waiting to return to product page after Delete Bid...");
+
+  if (attempt > 20) {
+    reportTaskResult("BID_REMOVE_FAILED", {
+      errorMessage: "Delete Bid clicked but did not return to product page"
+    });
+    return;
+  }
+
+  const isBuyPage = window.location.pathname.includes("/buy/");
+  const pageText = getPageText();
+
+  const looksLikeProductPage =
+    !isBuyPage &&
+    (
+      pageText.includes("buy or bid") ||
+      pageText.includes("sell or ask") ||
+      pageText.includes("your current bid") ||
+      pageText.includes("size")
+    );
+
+  if (looksLikeProductPage) {
+    console.log("🧹 Returned to product page after Delete Bid");
+    verifyRemovedBidForTargetSize();
+    return;
+  }
+
+  console.log("🧹 Not back on product page yet, retrying...");
+  setTimeout(() => {
+    waitForReturnToProductPageAfterRemove(attempt + 1);
+  }, 1000);
+}
+
+function verifyRemovedBidForTargetSize() {
+  if (!currentTask) {
+    reportTaskResult("BID_REMOVE_FAILED", {
+      errorMessage: "No currentTask available during post-delete verification"
+    });
+    return;
+  }
+
+  console.log("🧹 Verifying removed bid for target size:", currentTask.size);
+  openSizeDropdownAndSelectForRemoveVerification(currentTask.size);
+}
+
+function openSizeDropdownAndSelectForRemoveVerification(targetSize) {
+  console.log("🧹 Opening size dropdown for REMOVE verification:", targetSize);
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const dropdownButton = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text.includes("eu ") || text === "size:" || text.includes("size");
+  });
+
+  if (!dropdownButton) {
+    console.log("REMOVE VERIFY: size dropdown not found yet, retrying...");
+    setTimeout(() => openSizeDropdownAndSelectForRemoveVerification(targetSize), 1000);
+    return;
+  }
+
+  console.log("REMOVE VERIFY: clicking size dropdown:", dropdownButton.innerText);
+  dropdownButton.click();
+
+  setTimeout(() => {
+    selectSizeFromDropdownForRemoveVerification(targetSize);
+  }, 1000);
+}
+
+function selectSizeFromDropdownForRemoveVerification(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+  console.log("🧹 Selecting size for REMOVE verification:", normalizedTarget);
+
+  const allButtons = Array.from(document.querySelectorAll("button"));
+  const allDivs = Array.from(document.querySelectorAll("div"));
+  const allSpans = Array.from(document.querySelectorAll("span"));
+
+  const candidates = [...allButtons, ...allDivs, ...allSpans];
+
+  const match = candidates.find((el) => {
+    const text = normalizeText(el.innerText);
+    return (
+      text === normalizedTarget ||
+      text === `eu ${normalizedTarget}` ||
+      text.includes(`eu ${normalizedTarget}`)
+    );
+  });
+
+  if (!match) {
+    console.log("REMOVE VERIFY: size option not found yet, retrying...");
+    setTimeout(() => selectSizeFromDropdownForRemoveVerification(targetSize), 1000);
+    return;
+  }
+
+  console.log("🧹 Clicking size option for REMOVE verification:", match.innerText);
+  match.click();
+
+  setTimeout(() => {
+    checkIfBidRemovedForSelectedSize();
+  }, 1500);
+}
+
+function checkIfBidRemovedForSelectedSize(attempt = 0) {
+  console.log("🧹 Checking if bid is removed for selected size...");
+
+  if (attempt > 12) {
+    reportTaskResult("BID_REMOVE_FAILED", {
+      errorMessage: "Could not verify bid removal after re-selecting target size"
+    });
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+  const pageText = getPageText();
+
+  const updateBtn = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text === "update" || text.includes("update");
+  });
+
+  const hasCurrentBidText = pageText.includes("your current bid");
+
+  if (!updateBtn && !hasCurrentBidText) {
+    console.log("✅ Bid removed successfully for target size");
+    reportTaskResult("BID_REMOVED");
+    return;
+  }
+
+  console.log("🧹 Bid state still visible for target size, retrying verification...");
+  setTimeout(() => {
+    checkIfBidRemovedForSelectedSize(attempt + 1);
+  }, 1000);
 }
 
 function goToOfferPage(size) {
