@@ -4,21 +4,21 @@ let isRunnerEnabled = false;
 let isTaskInProgress = false;
 let loopTimeout = null;
 
-async function loadState() {
-  const data = await chrome.storage.local.get(["runnerEnabled"]);
-  isRunnerEnabled = data.runnerEnabled === true;
-}
-
-async function saveState() {
-  await chrome.storage.local.set({
-    runnerEnabled: isRunnerEnabled,
-    forceStop: !isRunnerEnabled
-  });
-}
-
 const LOOP_DELAY_MS = 8000;
 const NEXT_TASK_DELAY_AFTER_SUCCESS_MS = 5000;
 const ERROR_RETRY_DELAY_MS = 15000;
+
+async function loadState() {
+  const data = await chrome.storage.local.get(["runnerEnabled", "forceStop"]);
+  isRunnerEnabled = data.runnerEnabled === true;
+}
+
+async function saveState(forceStop = false) {
+  await chrome.storage.local.set({
+    runnerEnabled: isRunnerEnabled,
+    forceStop
+  });
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "FETCH_NEXT_TASK") {
@@ -44,30 +44,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "STOP_RUNNER") {
     stopRunner()
-      .then(() => {
-        sendResponse({
-          ok: true,
-          isRunnerEnabled,
-          isTaskInProgress
-        });
-      })
-      .catch((err) => {
-        sendResponse({
-          ok: false,
-          error: err.message
-        });
-      });
-  
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
+    return true;
+  }
+
+  if (message.type === "FORCE_STOP_RUNNER") {
+    forceStopRunner()
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
     return true;
   }
 
   if (message.type === "GET_RUNNER_STATUS") {
-    sendResponse({
-      ok: true,
-      isRunnerEnabled,
-      isTaskInProgress
+    chrome.storage.local.get(["forceStop"]).then((data) => {
+      sendResponse({
+        ok: true,
+        isRunnerEnabled,
+        isTaskInProgress,
+        forceStop: data.forceStop === true
+      });
     });
-    return false;
+
+    return true;
   }
 
   if (message.type === "TASK_COMPLETED") {
@@ -97,10 +98,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function startRunner() {
   isRunnerEnabled = true;
-  await chrome.storage.local.set({
-    runnerEnabled: true,
-    forceStop: false
-  });
+  await saveState(false);
 
   scheduleNextRun(500);
 
@@ -108,12 +106,32 @@ async function startRunner() {
     ok: true,
     message: "Runner started",
     isRunnerEnabled,
-    isTaskInProgress
+    isTaskInProgress,
+    forceStop: false
   };
 }
 
 async function stopRunner() {
   isRunnerEnabled = false;
+  await saveState(false);
+
+  if (loopTimeout) {
+    clearTimeout(loopTimeout);
+    loopTimeout = null;
+  }
+
+  return {
+    ok: true,
+    message: "Runner will stop after current task",
+    isRunnerEnabled,
+    isTaskInProgress,
+    forceStop: false
+  };
+}
+
+async function forceStopRunner() {
+  isRunnerEnabled = false;
+  isTaskInProgress = false;
 
   if (loopTimeout) {
     clearTimeout(loopTimeout);
@@ -125,6 +143,26 @@ async function stopRunner() {
     forceStop: true,
     currentTask: null
   });
+
+  const tabs = await chrome.tabs.query({ url: ["*://stockx.com/*"] });
+
+  for (const tab of tabs) {
+    if (tab.id) {
+      try {
+        await chrome.tabs.remove(tab.id);
+      } catch (err) {
+        console.warn("Could not close tab", tab.id, err);
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    message: "Runner force stopped",
+    isRunnerEnabled,
+    isTaskInProgress,
+    forceStop: true
+  };
 }
 
 function scheduleNextRun(delayMs) {
@@ -160,9 +198,6 @@ async function runLoop() {
     scheduleNextRun(LOOP_DELAY_MS);
     return;
   }
-
-  // if task exists, content script will finish it
-  // and TASK_COMPLETED will schedule the next run
 }
 
 async function handleSingleTask() {
@@ -187,7 +222,10 @@ async function handleSingleTask() {
 
   isTaskInProgress = true;
 
-  await chrome.storage.local.set({ currentTask: task });
+  await chrome.storage.local.set({
+    currentTask: task,
+    forceStop: false
+  });
 
   const url = buildStockXUrl(task);
 
