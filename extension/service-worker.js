@@ -248,7 +248,8 @@ async function fetchNextTask() {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      runnerName: CONFIG.RUNNER_NAME
+      runnerName: CONFIG.RUNNER_NAME,
+      accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY
     })
   });
 
