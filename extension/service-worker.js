@@ -46,20 +46,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name !== RUNNER_ALARM_NAME) return;
-  
-    runLoop().catch((err) => {
-      console.error("Runner loop error:", err);
-  
-      isTaskInProgress = false;
-  
-      if (isRunnerEnabled) {
-        scheduleNextRun(ERROR_RETRY_DELAY_MS);
-      }
-    });
-  });
-
   if (message.type === "START_RUNNER") {
     startRunner()
       .then((result) => sendResponse(result))
@@ -122,11 +108,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== RUNNER_ALARM_NAME) return;
+  
+  runLoop().catch((err) => {
+    console.error("Runner loop error:", err);
+  
+    isTaskInProgress = false;
+  
+    if (isRunnerEnabled) {
+      scheduleNextRun(ERROR_RETRY_DELAY_MS);
+    }
+  });
+});
+
 async function startRunner() {
   isRunnerEnabled = true;
   await saveState(false);
 
-  scheduleNextRun(500);
+  await scheduleNextRun(500);
 
   return {
     ok: true,
