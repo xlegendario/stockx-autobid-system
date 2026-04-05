@@ -57,13 +57,26 @@ async function handleTask() {
 
   if (await stopIfNeeded("handleTask")) return;
 
-  if (currentTask.type !== "PLACE_OR_UPDATE") {
-    console.log("Not a PLACE_OR_UPDATE task, skipping placement flow");
+  console.log("Handling task:", currentTask);
+
+  if (currentTask.type === "PLACE_OR_UPDATE") {
+    openSizeDropdownAndSelect(currentTask.size);
     return;
   }
+  
+  if (currentTask.type === "REMOVE") {
+    handleRemoveFlow();
+    return;
+  }
+  
+  console.log("Unknown task type, skipping:", currentTask.type);
+}
 
-  console.log("Handling task:", currentTask);
-  openSizeDropdownAndSelect(currentTask.size);
+function handleRemoveFlow() {
+  console.log("🧹 Starting REMOVE flow for:", currentTask);
+
+  // altijd size opnieuw selecteren (consistent met place flow)
+  openSizeDropdownAndSelectForRemove(currentTask.size);
 }
 
 function normalizeText(value) {
