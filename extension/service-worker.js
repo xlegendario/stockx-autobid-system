@@ -11,7 +11,8 @@ async function loadState() {
 
 async function saveState() {
   await chrome.storage.local.set({
-    runnerEnabled: isRunnerEnabled
+    runnerEnabled: isRunnerEnabled,
+    forceStop: !isRunnerEnabled
   });
 }
 
@@ -42,13 +43,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "STOP_RUNNER") {
-    stopRunner();
-    sendResponse({
-      ok: true,
-      isRunnerEnabled,
-      isTaskInProgress
-    });
-    return false;
+    stopRunner()
+      .then(() => {
+        sendResponse({
+          ok: true,
+          isRunnerEnabled,
+          isTaskInProgress
+        });
+      })
+      .catch((err) => {
+        sendResponse({
+          ok: false,
+          error: err.message
+        });
+      });
+  
+    return true;
   }
 
   if (message.type === "GET_RUNNER_STATUS") {
@@ -87,7 +97,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 async function startRunner() {
   isRunnerEnabled = true;
-  await saveState();
+  await chrome.storage.local.set({
+    runnerEnabled: true,
+    forceStop: false
+  });
 
   scheduleNextRun(500);
 
@@ -99,15 +112,19 @@ async function startRunner() {
   };
 }
 
-function stopRunner() {
+async function stopRunner() {
   isRunnerEnabled = false;
-
-  chrome.storage.local.set({ runnerEnabled: false });
 
   if (loopTimeout) {
     clearTimeout(loopTimeout);
     loopTimeout = null;
   }
+
+  await chrome.storage.local.set({
+    runnerEnabled: false,
+    forceStop: true,
+    currentTask: null
+  });
 }
 
 function scheduleNextRun(delayMs) {
