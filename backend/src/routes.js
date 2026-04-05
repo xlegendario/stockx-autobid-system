@@ -25,6 +25,7 @@ router.get("/orders", async (req, res) => {
 router.post("/tasks/next", async (req, res) => {
   try {
     const runnerNameRaw = req.body.runnerName;
+    const accountGroupKeyRaw = req.body.accountGroupKey || null;
 
     if (!runnerNameRaw) {
       return res.status(400).json({
@@ -34,10 +35,13 @@ router.post("/tasks/next", async (req, res) => {
     }
 
     const runnerName = String(runnerNameRaw).trim().toLowerCase();
-
+    const accountGroupKey = accountGroupKeyRaw
+      ? String(accountGroupKeyRaw).trim().toLowerCase()
+      : null;
+    
     const records = await fetchOrders();
     const activeBidRecords = await fetchActiveBids();
-    const task = await buildTask(records, runnerName, activeBidRecords);
+    const task = await buildTask(records, runnerName, activeBidRecords, accountGroupKey);
 
     res.json({
       ok: true,
