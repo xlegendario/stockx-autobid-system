@@ -2,6 +2,11 @@ console.log("StockX Autobid content script loaded");
 
 let currentTask = null;
 
+async function shouldStopRunner() {
+  const data = await chrome.storage.local.get(["forceStop", "runnerEnabled"]);
+  return data.forceStop === true || data.runnerEnabled === false;
+}
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "NEW_TASK") {
     currentTask = message.task;
@@ -23,19 +28,34 @@ window.addEventListener("load", async () => {
   }
 
   if (window.location.pathname.includes("/buy/")) {
-    setTimeout(() => {
+    setTimeout(async () => {
+      if (await stopIfNeeded("page load buy page")) return;
       handleBuyPage();
     }, 1500);
     return;
   }
 
-  setTimeout(() => {
+  setTimeout(async () => {
+    if (await stopIfNeeded("page load")) return;
     handleTask();
   }, 2000);
 });
 
-function handleTask() {
+async function stopIfNeeded(context = "") {
+  const mustStop = await shouldStopRunner();
+
+  if (mustStop) {
+    console.log(`🛑 Runner stopped${context ? ` during ${context}` : ""}`);
+    return true;
+  }
+
+  return false;
+}
+
+async function handleTask() {
   if (!currentTask) return;
+
+  if (await stopIfNeeded("handleTask")) return;
 
   if (currentTask.type !== "PLACE_OR_UPDATE") {
     console.log("Not a PLACE_OR_UPDATE task, skipping placement flow");
@@ -308,7 +328,7 @@ function fillBidPrice(attempt = 0) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
   input.dispatchEvent(new Event("blur", { bubbles: true }));
 
-  setTimeout(() => {
+  setTimeout(async () => {
     const currentVal = normalizeNumericString(input.value);
     const expectedVal = normalizeNumericString(bidValue);
 
@@ -320,6 +340,8 @@ function fillBidPrice(attempt = 0) {
       setTimeout(() => fillBidPrice(attempt + 1), 1000);
       return;
     }
+
+    if (await stopIfNeeded("after fillBidPrice")) return;
 
     console.log("✅ Bid input matches expected value");
     waitForReviewBidEnabled();
@@ -378,7 +400,7 @@ function clickElement(el) {
   return true;
 }
 
-function clickReviewBid(attempt = 0) {
+async function clickReviewBid(attempt = 0) {
   if (attempt > 15) {
     console.log("Review button not found after multiple attempts");
     return;
@@ -397,6 +419,8 @@ function clickReviewBid(attempt = 0) {
     return;
   }
 
+  if (await stopIfNeeded("before Review click")) return;
+
   console.log("🔥 Clicking review button:", btn.innerText);
   clickElement(btn);
 
@@ -405,7 +429,7 @@ function clickReviewBid(attempt = 0) {
   }, 2500);
 }
 
-function clickConfirmBid(attempt = 0) {
+async function clickConfirmBid(attempt = 0) {
   if (attempt > 20) {
     console.log("Confirm/Place button not found after multiple attempts");
     return;
@@ -435,6 +459,8 @@ function clickConfirmBid(attempt = 0) {
   }
 
   const finalButtonText = (btn.innerText || "").trim();
+
+  if (await stopIfNeeded("before final submit")) return;
 
   console.log("🔥 Clicking final submit button:", finalButtonText);
   clickElement(btn);
