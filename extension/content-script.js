@@ -2,9 +2,9 @@ console.log("StockX Autobid content script loaded");
 
 let currentTask = null;
 
-async function shouldStopRunner() {
-  const data = await chrome.storage.local.get(["forceStop", "runnerEnabled"]);
-  return data.forceStop === true || data.runnerEnabled === false;
+async function shouldForceStopRunner() {
+  const data = await chrome.storage.local.get(["forceStop"]);
+  return data.forceStop === true;
 }
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -42,10 +42,10 @@ window.addEventListener("load", async () => {
 });
 
 async function stopIfNeeded(context = "") {
-  const mustStop = await shouldStopRunner();
+  const mustStop = await shouldForceStopRunner();
 
   if (mustStop) {
-    console.log(`🛑 Runner stopped${context ? ` during ${context}` : ""}`);
+    console.log(`🛑 Force stop triggered${context ? ` during ${context}` : ""}`);
     return true;
   }
 
