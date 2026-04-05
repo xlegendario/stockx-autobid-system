@@ -189,29 +189,36 @@ function selectSizeFromDropdownForRemove(targetSize) {
   const normalizedTarget = normalizeText(targetSize);
   console.log("🧹 Trying to select size from dropdown for REMOVE:", normalizedTarget);
 
-  const allButtons = Array.from(document.querySelectorAll("button"));
-  const allDivs = Array.from(document.querySelectorAll("div"));
-  const allSpans = Array.from(document.querySelectorAll("span"));
-
-  const candidates = [...allButtons, ...allDivs, ...allSpans];
-
-  const match = candidates.find((el) => {
+  const candidates = Array.from(
+    document.querySelectorAll("button, [role='option'], li, div, span")
+  ).filter((el) => {
     const text = normalizeText(el.innerText);
-    return (
-      text === normalizedTarget ||
-      text === `eu ${normalizedTarget}` ||
-      text.includes(`eu ${normalizedTarget}`)
-    );
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    // voorkom dat we de dropdown control zelf pakken
+    if (text.includes("size:")) return false;
+
+    return text === normalizedTarget || text === `eu ${normalizedTarget}`;
   });
 
-  if (!match) {
+  if (candidates.length === 0) {
     console.log("REMOVE: size option not found yet, retrying...");
     setTimeout(() => selectSizeFromDropdownForRemove(targetSize), 1000);
     return;
   }
 
+  // pak de kortste match, meestal de echte optie
+  const match = candidates.sort(
+    (a, b) => normalizeText(a.innerText).length - normalizeText(b.innerText).length
+  )[0];
+
   console.log("🧹 Clicking size option for REMOVE:", match.innerText);
-  match.click();
+  clickElement(match);
 
   setTimeout(() => {
     clickUpdateButtonForRemove();
@@ -228,94 +235,45 @@ function clickUpdateButtonForRemove(attempt = 0) {
     return;
   }
 
-  const allElements = Array.from(
-    document.querySelectorAll("button, a, [role='button'], div, span, p")
-  );
-
-  const visibleElements = allElements.filter((el) => {
+  const candidates = Array.from(
+    document.querySelectorAll("button, a, [role='button'], div, span")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
 
-    return (
-      rect.width > 0 &&
-      rect.height > 0 &&
-      style.visibility !== "hidden" &&
-      style.display !== "none"
-    );
-  });
-
-  // 1) Probeer eerst de banner-context te vinden: "your current bid is"
-  const bidBannerTextEl = visibleElements.find((el) => {
-    const text = normalizeText(el.innerText);
-    return text.includes("your current bid is");
-  });
-
-  if (bidBannerTextEl) {
-    console.log("🧹 Found current bid banner text:", bidBannerTextEl.innerText);
-
-    const bannerRoot =
-      bidBannerTextEl.closest("div, section, article, header") || bidBannerTextEl.parentElement;
-
-    if (bannerRoot) {
-      const bannerCandidates = Array.from(
-        bannerRoot.querySelectorAll("button, a, [role='button'], div, span")
-      ).filter((el) => {
-        const text = normalizeText(el.innerText);
-        const rect = el.getBoundingClientRect();
-        const style = window.getComputedStyle(el);
-
-        return (
-          rect.width > 0 &&
-          rect.height > 0 &&
-          style.visibility !== "hidden" &&
-          style.display !== "none" &&
-          (text === "update" || text.includes("update"))
-        );
-      });
-
-      if (bannerCandidates.length > 0) {
-        const updateEl = bannerCandidates[0];
-        console.log("🧹 Clicking Update control from current bid banner:", updateEl.innerText);
-        clickElement(updateEl);
-
-        setTimeout(() => {
-          waitForRemoveEditPage();
-        }, 2500);
-        return;
-      }
-    }
-  }
-
-  // 2) Fallback: brede search over zichtbare interactieve elementen
-  const fallbackCandidates = visibleElements.filter((el) => {
-    const text = normalizeText(el.innerText);
     if (!text) return false;
-    if (text.length > 40) return false;
-    return text === "update" || text.includes("update");
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    return text === "update";
   });
 
-  if (fallbackCandidates.length > 0) {
-    const updateEl = fallbackCandidates[0];
-    console.log("🧹 Clicking fallback Update control:", updateEl.innerText);
-    clickElement(updateEl);
+  if (candidates.length === 0) {
+    console.log(
+      "REMOVE DEBUG visible update-like elements:",
+      Array.from(document.querySelectorAll("button, a, [role='button'], div, span"))
+        .map((el) => normalizeText(el.innerText))
+        .filter((text) => text.includes("update") || text.includes("your current bid"))
+    );
 
-    setTimeout(() => {
-      waitForRemoveEditPage();
-    }, 2500);
+    console.log("REMOVE: Update button not found yet, retrying...");
+    setTimeout(() => clickUpdateButtonForRemove(attempt + 1), 1000);
     return;
   }
 
-  // 👇 VOEG HIER TOE
-  console.log(
-    "REMOVE DEBUG visible update-like elements:",
-    visibleElements
-      .map((el) => normalizeText(el.innerText))
-      .filter((text) => text.includes("update") || text.includes("your current bid"))
-  );
-  
-  // bestaande code
-  console.log("REMOVE: Update button not found yet, retrying...");
-  setTimeout(() => clickUpdateButtonForRemove(attempt + 1), 1000);
+  // pak de kleinste 'update' match, niet een grote container
+  const updateEl = candidates.sort(
+    (a, b) => a.getBoundingClientRect().width * a.getBoundingClientRect().height -
+              b.getBoundingClientRect().width * b.getBoundingClientRect().height
+  )[0];
+
+  console.log("🧹 Clicking real Update control:", updateEl.innerText);
+  clickElement(updateEl);
+
+  setTimeout(() => {
+    waitForRemoveEditPage();
+  }, 2500);
 }
 
 function waitForRemoveEditPage(attempt = 0) {
