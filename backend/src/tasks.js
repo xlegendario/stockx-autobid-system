@@ -119,16 +119,6 @@ export function debugRecords(records, runnerName) {
   });
 }
 
-function getAccountGroupKey(fields) {
-  const raw = normalizeLookup(fields["Merchant StockX Account Group Key"]);
-
-  if (raw === undefined || raw === null || raw === "") {
-    return getRunner(fields);
-  }
-
-  return String(raw).trim().toLowerCase();
-}
-
 function getBlockingKey(fields) {
   const accountGroup = getAccountGroupKey(fields);
   const sku = getSku(fields);
