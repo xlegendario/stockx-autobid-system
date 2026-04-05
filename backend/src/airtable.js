@@ -1,7 +1,8 @@
 const BASE_ID = process.env.AIRTABLE_BASE_ID;
 const TABLE_NAME = process.env.AIRTABLE_TABLE_NAME;
 const TOKEN = process.env.AIRTABLE_TOKEN;
-const VIEW_NAME = process.env.AIRTABLE_VIEW_NAME;
+const QUEUE_VIEW_NAME = process.env.AIRTABLE_VIEW_NAME;
+const ACTIVE_BIDS_VIEW_NAME = process.env.AIRTABLE_ACTIVE_BIDS_VIEW_NAME;
 
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_NAME)}`;
 
@@ -12,15 +13,15 @@ function headers() {
   };
 }
 
-export async function fetchOrders() {
+async function fetchViewRecords(viewName) {
   let allRecords = [];
   let offset = null;
 
   do {
     const url = new URL(BASE_URL);
 
-    if (VIEW_NAME) {
-      url.searchParams.set("view", VIEW_NAME);
+    if (viewName) {
+      url.searchParams.set("view", viewName);
     }
 
     if (offset) {
@@ -43,6 +44,14 @@ export async function fetchOrders() {
   } while (offset);
 
   return allRecords;
+}
+
+export async function fetchOrders() {
+  return await fetchViewRecords(QUEUE_VIEW_NAME);
+}
+
+export async function fetchActiveBids() {
+  return await fetchViewRecords(ACTIVE_BIDS_VIEW_NAME);
 }
 
 export async function updateOrder(recordId, fields) {
