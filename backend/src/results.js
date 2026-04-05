@@ -40,13 +40,31 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
-  if (payload.type === "REMOVE") {
+  if (payload.action === "BID_REMOVED") {
     return await updateOrder(recordId, {
       BidPlaced: false,
       CurrentBid: null,
       LastAction: "BID_REMOVED",
       LastSyncAt: now,
       ErrorMessage: payload.errorMessage || ""
+    });
+  }
+
+  if (payload.action === "BID_REMOVE_NOT_FOUND") {
+    return await updateOrder(recordId, {
+      BidPlaced: false,
+      CurrentBid: null,
+      LastAction: "BID_REMOVE_NOT_FOUND",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+
+  if (payload.action === "BID_REMOVE_FAILED") {
+    return await updateOrder(recordId, {
+      LastAction: "BID_REMOVE_FAILED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Remove flow failed"
     });
   }
 
