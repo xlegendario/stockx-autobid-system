@@ -23,10 +23,22 @@ document.getElementById("startRunner").addEventListener("click", async () => {
 
 document.getElementById("stopRunner").addEventListener("click", async () => {
   const statusEl = document.getElementById("status");
-  statusEl.textContent = "Stopping runner...";
+  statusEl.textContent = "Stopping runner after current task...";
 
   try {
     const response = await chrome.runtime.sendMessage({ type: "STOP_RUNNER" });
+    statusEl.textContent = JSON.stringify(response, null, 2);
+  } catch (err) {
+    statusEl.textContent = `Error: ${err.message}`;
+  }
+});
+
+document.getElementById("forceStopRunner").addEventListener("click", async () => {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "Force stopping runner...";
+
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "FORCE_STOP_RUNNER" });
     statusEl.textContent = JSON.stringify(response, null, 2);
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
