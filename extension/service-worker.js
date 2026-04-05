@@ -2,11 +2,11 @@ import { CONFIG } from "./config.js";
 
 let isRunnerEnabled = false;
 let isTaskInProgress = false;
-let loopTimeout = null;
 
 const LOOP_DELAY_MS = 8000;
 const NEXT_TASK_DELAY_AFTER_SUCCESS_MS = 5000;
 const ERROR_RETRY_DELAY_MS = 15000;
+const RUNNER_ALARM_NAME = "stockx-runner-loop";
 
 async function loadState() {
   const data = await chrome.storage.local.get(["runnerEnabled", "forceStop"]);
@@ -17,6 +17,18 @@ async function saveState(forceStop = false) {
   await chrome.storage.local.set({
     runnerEnabled: isRunnerEnabled,
     forceStop
+  });
+}
+
+async function scheduleNextRun(delayMs) {
+  if (!isRunnerEnabled) return;
+
+  await chrome.alarms.clear(RUNNER_ALARM_NAME);
+
+  const delayMinutes = Math.max(delayMs / 60000, 0.1);
+
+  await chrome.alarms.create(RUNNER_ALARM_NAME, {
+    delayInMinutes: delayMinutes
   });
 }
 
@@ -33,6 +45,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     return true;
   }
+
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== RUNNER_ALARM_NAME) return;
+  
+    runLoop().catch((err) => {
+      console.error("Runner loop error:", err);
+  
+      isTaskInProgress = false;
+  
+      if (isRunnerEnabled) {
+        scheduleNextRun(ERROR_RETRY_DELAY_MS);
+      }
+    });
+  });
 
   if (message.type === "START_RUNNER") {
     startRunner()
@@ -114,11 +140,7 @@ async function startRunner() {
 async function stopRunner() {
   isRunnerEnabled = false;
   await saveState(false);
-
-  if (loopTimeout) {
-    clearTimeout(loopTimeout);
-    loopTimeout = null;
-  }
+  await chrome.alarms.clear(RUNNER_ALARM_NAME);
 
   return {
     ok: true,
@@ -133,10 +155,7 @@ async function forceStopRunner() {
   isRunnerEnabled = false;
   isTaskInProgress = false;
 
-  if (loopTimeout) {
-    clearTimeout(loopTimeout);
-    loopTimeout = null;
-  }
+  await chrome.alarms.clear(RUNNER_ALARM_NAME);
 
   await chrome.storage.local.set({
     runnerEnabled: false,
@@ -163,27 +182,6 @@ async function forceStopRunner() {
     isTaskInProgress,
     forceStop: true
   };
-}
-
-function scheduleNextRun(delayMs) {
-  if (!isRunnerEnabled) return;
-
-  if (loopTimeout) {
-    clearTimeout(loopTimeout);
-    loopTimeout = null;
-  }
-
-  loopTimeout = setTimeout(() => {
-    runLoop().catch((err) => {
-      console.error("Runner loop error:", err);
-
-      isTaskInProgress = false;
-
-      if (isRunnerEnabled) {
-        scheduleNextRun(ERROR_RETRY_DELAY_MS);
-      }
-    });
-  }, delayMs);
 }
 
 async function runLoop() {
