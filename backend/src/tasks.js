@@ -127,7 +127,7 @@ function getBlockingKey(fields) {
   return `${accountGroup}|${sku}|${size}`;
 }
 
-export async function buildTask(records, runnerName, activeBidRecords = []) {
+export async function buildTask(records, runnerName, activeBidRecords = [], requestedAccountGroupKey = null) {
   const normalizedRequestedRunner = normalizeRunner(runnerName);
   const activeBidKeys = new Set(
     activeBidRecords
