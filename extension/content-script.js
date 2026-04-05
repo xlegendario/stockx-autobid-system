@@ -176,11 +176,12 @@ function handleBuyPage(attempt = 0) {
 
   // Alleen direct naar price form als er OOK een Review Bid knop zichtbaar is
   const priceInput = findBidInput();
-  const hasReviewBidButton = Array.from(document.querySelectorAll("button")).some((btn) =>
-    (btn.innerText || "").trim().toLowerCase().includes("review bid")
-  );
-
-  if (priceInput && hasReviewBidButton) {
+  const hasReviewActionButton = Array.from(document.querySelectorAll("button")).some((btn) => {
+    const text = (btn.innerText || "").trim().toLowerCase();
+    return text.includes("review bid") || text.includes("review order");
+  });
+  
+  if (priceInput && hasReviewActionButton) {
     console.log("Bid input screen detected directly");
     setTimeout(() => fillBidPrice(), 800);
     return;
