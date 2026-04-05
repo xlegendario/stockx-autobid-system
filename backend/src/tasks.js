@@ -70,12 +70,23 @@ function getMaxBid(fields) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getAccountGroupKey(fields) {
+  const raw = normalizeLookup(fields["Merchant StockX Account Group Key"]);
+
+  if (raw === undefined || raw === null || raw === "") {
+    // fallback als lookup leeg is
+    return getRunner(fields);
+  }
+
+  return String(raw).trim().toLowerCase();
+}
+
 function getGroupKey(fields) {
-  const runner = getRunner(fields);
+  const accountGroup = getAccountGroupKey(fields);
   const sku = getSku(fields);
   const size = fields["Size"];
 
-  return `${runner}|${sku}|${size}`;
+  return `${accountGroup}|${sku}|${size}`;
 }
 
 export function debugRecords(records, runnerName) {
@@ -91,6 +102,7 @@ export function debugRecords(records, runnerName) {
       size: f["Size"] || null,
       fulfillmentStatus: f["Fulfillment Status"] || null,
       runnerParsed: getRunner(f),
+      accountGroupParsed: getAccountGroupKey(f),
       requestedRunner: normalizedRequestedRunner,
       runnerMatches: getRunner(f) === normalizedRequestedRunner,
       autobidParsed: isAutobidEnabled(f),
