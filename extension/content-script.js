@@ -161,6 +161,90 @@ function selectSizeFromDropdown(targetSize) {
   }, 1200);
 }
 
+function openSizeDropdownAndSelectForRemove(targetSize) {
+  console.log("🧹 Trying to open size dropdown for REMOVE:", targetSize);
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const dropdownButton = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text.includes("eu ") || text === "size:" || text.includes("size");
+  });
+
+  if (!dropdownButton) {
+    console.log("REMOVE: size dropdown not found yet, retrying...");
+    setTimeout(() => openSizeDropdownAndSelectForRemove(targetSize), 1000);
+    return;
+  }
+
+  console.log("REMOVE: clicking size dropdown:", dropdownButton.innerText);
+  dropdownButton.click();
+
+  setTimeout(() => {
+    selectSizeFromDropdownForRemove(targetSize);
+  }, 1000);
+}
+
+function selectSizeFromDropdownForRemove(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+  console.log("🧹 Trying to select size from dropdown for REMOVE:", normalizedTarget);
+
+  const allButtons = Array.from(document.querySelectorAll("button"));
+  const allDivs = Array.from(document.querySelectorAll("div"));
+  const allSpans = Array.from(document.querySelectorAll("span"));
+
+  const candidates = [...allButtons, ...allDivs, ...allSpans];
+
+  const match = candidates.find((el) => {
+    const text = normalizeText(el.innerText);
+    return (
+      text === normalizedTarget ||
+      text === `eu ${normalizedTarget}` ||
+      text.includes(`eu ${normalizedTarget}`)
+    );
+  });
+
+  if (!match) {
+    console.log("REMOVE: size option not found yet, retrying...");
+    setTimeout(() => selectSizeFromDropdownForRemove(targetSize), 1000);
+    return;
+  }
+
+  console.log("🧹 Clicking size option for REMOVE:", match.innerText);
+  match.click();
+
+  setTimeout(() => {
+    clickUpdateButtonForRemove();
+  }, 1500);
+}
+
+function clickUpdateButtonForRemove(attempt = 0) {
+  console.log("🧹 REMOVE flow reached clickUpdateButtonForRemove");
+
+  if (attempt > 10) {
+    reportTaskResult("BID_REMOVE_NOT_FOUND", {
+      errorMessage: "Update button not found after selecting size"
+    });
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const updateBtn = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text === "update" || text.includes("update");
+  });
+
+  if (!updateBtn) {
+    console.log("REMOVE: Update button not found yet, retrying...");
+    setTimeout(() => clickUpdateButtonForRemove(attempt + 1), 1000);
+    return;
+  }
+
+  console.log("🧹 Clicking Update button:", updateBtn.innerText);
+  clickElement(updateBtn);
+}
+
 function goToOfferPage(size) {
   const currentUrl = new URL(window.location.href);
   const slug = currentUrl.pathname.replace(/^\/+/, "");
