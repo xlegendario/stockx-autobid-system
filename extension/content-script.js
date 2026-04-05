@@ -215,38 +215,107 @@ function selectSizeFromDropdownForRemove(targetSize) {
 
   setTimeout(() => {
     clickUpdateButtonForRemove();
-  }, 1500);
+  }, 2500);
 }
 
 function clickUpdateButtonForRemove(attempt = 0) {
   console.log("🧹 REMOVE flow reached clickUpdateButtonForRemove");
 
-  if (attempt > 10) {
+  if (attempt > 25) {
     reportTaskResult("BID_REMOVE_NOT_FOUND", {
       errorMessage: "Update button not found after selecting size"
     });
     return;
   }
 
-  const buttons = Array.from(document.querySelectorAll("button"));
+  const allElements = Array.from(
+    document.querySelectorAll("button, a, [role='button'], div, span, p")
+  );
 
-  const updateBtn = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
+  const visibleElements = allElements.filter((el) => {
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== "hidden" &&
+      style.display !== "none"
+    );
+  });
+
+  // 1) Probeer eerst de banner-context te vinden: "your current bid is"
+  const bidBannerTextEl = visibleElements.find((el) => {
+    const text = normalizeText(el.innerText);
+    return text.includes("your current bid is");
+  });
+
+  if (bidBannerTextEl) {
+    console.log("🧹 Found current bid banner text:", bidBannerTextEl.innerText);
+
+    const bannerRoot =
+      bidBannerTextEl.closest("div, section, article, header") || bidBannerTextEl.parentElement;
+
+    if (bannerRoot) {
+      const bannerCandidates = Array.from(
+        bannerRoot.querySelectorAll("button, a, [role='button'], div, span")
+      ).filter((el) => {
+        const text = normalizeText(el.innerText);
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          style.visibility !== "hidden" &&
+          style.display !== "none" &&
+          (text === "update" || text.includes("update"))
+        );
+      });
+
+      if (bannerCandidates.length > 0) {
+        const updateEl = bannerCandidates[0];
+        console.log("🧹 Clicking Update control from current bid banner:", updateEl.innerText);
+        clickElement(updateEl);
+
+        setTimeout(() => {
+          waitForRemoveEditPage();
+        }, 2500);
+        return;
+      }
+    }
+  }
+
+  // 2) Fallback: brede search over zichtbare interactieve elementen
+  const fallbackCandidates = visibleElements.filter((el) => {
+    const text = normalizeText(el.innerText);
+    if (!text) return false;
+    if (text.length > 40) return false;
     return text === "update" || text.includes("update");
   });
 
-  if (!updateBtn) {
-    console.log("REMOVE: Update button not found yet, retrying...");
-    setTimeout(() => clickUpdateButtonForRemove(attempt + 1), 1000);
+  if (fallbackCandidates.length > 0) {
+    const updateEl = fallbackCandidates[0];
+    console.log("🧹 Clicking fallback Update control:", updateEl.innerText);
+    clickElement(updateEl);
+
+    setTimeout(() => {
+      waitForRemoveEditPage();
+    }, 2500);
     return;
   }
 
-  console.log("🧹 Clicking Update button:", updateBtn.innerText);
-  clickElement(updateBtn);
+  // 👇 VOEG HIER TOE
+  console.log(
+    "REMOVE DEBUG visible update-like elements:",
+    visibleElements
+      .map((el) => normalizeText(el.innerText))
+      .filter((text) => text.includes("update") || text.includes("your current bid"))
+  );
   
-  setTimeout(() => {
-    waitForRemoveEditPage();
-  }, 2000);
+  // bestaande code
+  console.log("REMOVE: Update button not found yet, retrying...");
+  setTimeout(() => clickUpdateButtonForRemove(attempt + 1), 1000);
 }
 
 function waitForRemoveEditPage(attempt = 0) {
