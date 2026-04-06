@@ -1,5 +1,13 @@
 import { resolveStockxUrlBySku } from "./retailed.js";
 
+function isVerifyCandidate(fields) {
+  return (
+    hasBidPlaced(fields) &&
+    !needsBid(fields) &&
+    !needsRemoval(fields)
+  );
+}
+
 function normalizeLookup(value) {
   if (Array.isArray(value)) return value[0];
   return value;
@@ -185,6 +193,7 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
   // Eerst alle PLACE/UPDATE candidates verzamelen
   const placeCandidates = [];
   const removeCandidates = [];
+  const verifyCandidates = [];
 
   for (const key of Object.keys(groups)) {
     const group = groups[key];
@@ -201,10 +210,108 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     }
   }
 
+  // VERIFY candidates uit active bids
+  for (const record of activeBidRecords) {
+    const f = record.fields;
+  
+    if (!isAutobidEnabled(f)) continue;
+  
+    const runner = getRunner(f);
+    const accountGroup = getAccountGroupKey(f);
+    const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
+  
+    if (accountMode === "MAIN_ACCOUNT") {
+      if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
+        continue;
+      }
+    } else {
+      if (runner !== normalizedRequestedRunner) {
+        continue;
+      }
+    }
+  
+    if (!isVerifyCandidate(f)) continue;
+  
+    verifyCandidates.push(record);
+  }
+
   // Prioriteit: PLACE_OR_UPDATE boven REMOVE
-  const chosen =
-    placeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0] ||
+  const chosenRemove =
     removeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenRemove) {
+    const fields = chosenRemove.fields;
+    const sku = getSku(fields);
+    const size = fields["Size"];
+  
+    let stockxUrl = fields["StockX URL"] || null;
+  
+    if (!stockxUrl) {
+      try {
+        const resolved = await resolveStockxUrlBySku(sku);
+        stockxUrl = resolved.stockxUrl;
+      } catch {
+        stockxUrl = null;
+      }
+    }
+  
+    return {
+      type: "REMOVE",
+      recordId: chosenRemove.id,
+      sku,
+      size,
+      stockxUrl
+    };
+  }
+  
+  const chosenPlace =
+    placeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenPlace) {
+    const fields = chosenPlace.fields;
+    const sku = getSku(fields);
+    const size = fields["Size"];
+    const maxBid = getMaxBid(fields);
+  
+    let stockxUrl = fields["StockX URL"] || null;
+  
+    if (!stockxUrl) {
+      try {
+        const resolved = await resolveStockxUrlBySku(sku);
+        stockxUrl = resolved.stockxUrl;
+      } catch {
+        stockxUrl = null;
+      }
+    }
+  
+    return {
+      type: "PLACE_OR_UPDATE",
+      recordId: chosenPlace.id,
+      sku,
+      size,
+      maxBid,
+      stockxUrl
+    };
+  }
+  
+  const chosenVerify =
+    verifyCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenVerify) {
+    const fields = chosenVerify.fields;
+    const sku = getSku(fields);
+    const size = fields["Size"];
+  
+    return {
+      type: "VERIFY_BID_STATUS",
+      recordId: chosenVerify.id,
+      sku,
+      size,
+      stockxUrl: fields["StockX URL"] || null
+    };
+  }
+  
+  return null;
 
   if (!chosen) return null;
 
