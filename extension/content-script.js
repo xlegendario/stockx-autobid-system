@@ -65,6 +65,11 @@ async function handleTask() {
   });
 
   if (currentTask.type === "PLACE_OR_UPDATE") {
+    if (window.location.pathname.includes("/buy/")) {
+      handleBuyPage();
+      return;
+    }
+  
     goToOfferPage();
     return;
   }
