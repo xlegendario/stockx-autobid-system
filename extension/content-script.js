@@ -331,6 +331,18 @@ function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
+  const pageText = getPageText();
+
+  // expliciete empty state op orders page
+  if (
+    pageText.includes("you don't have any pending orders") ||
+    pageText.includes("items that are being shipped to you will show up here")
+  ) {
+    console.log("❌ Verify: no pending orders found");
+    reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
+    return;
+  }
+
   const rows = Array.from(document.querySelectorAll("tr, [role='row'], li, article, div"))
     .filter((el) => {
       const text = normalizeText(el.innerText);
@@ -370,7 +382,6 @@ function handleVerifyOrdersPage(attempt = 0) {
     orderNumber
   });
 }
-
 function normalizeText(value) {
   return String(value || "")
     .trim()
