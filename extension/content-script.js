@@ -518,12 +518,12 @@ function goToOfferPage() {
     return;
   }
 
-  // als we ooit al op /buy/slug zitten, strip dan alleen de buy-prefix
+  // als we al op /buy/slug zitten → strip "buy/"
   if (slug.startsWith("buy/")) {
     slug = slug.replace(/^buy\//, "");
   }
 
-  const offerUrl = `https://stockx.com/buy/${slug}`;
+  const offerUrl = `https://stockx.com/buy/${slug}?defaultBid=true`;
 
   console.log("🔥 Navigating directly to buy page:", offerUrl);
   window.location.href = offerUrl;
