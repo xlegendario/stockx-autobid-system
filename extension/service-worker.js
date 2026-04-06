@@ -280,9 +280,24 @@ async function submitTaskResult(payload) {
 
 function buildStockXUrl(task) {
   if (task.stockxUrl) {
-    return task.stockxUrl;
+    // extract slug uit bestaande URL
+    const url = new URL(task.stockxUrl);
+    let slug = url.pathname.replace(/^\/+/, "");
+
+    if (!slug) {
+      return task.stockxUrl;
+    }
+
+    // PLACE flow → direct naar buy page
+    if (task.type === "PLACE_OR_UPDATE") {
+      return `https://stockx.com/buy/${slug}?defaultBid=true`;
+    }
+
+    // REMOVE flow → normale productpagina
+    return `https://stockx.com/${slug}`;
   }
 
+  // fallback
   const sku = task.sku;
   return `https://stockx.com/search?s=${sku}`;
 }
