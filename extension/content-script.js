@@ -72,10 +72,11 @@ async function handleTask() {
   console.log("Unknown task type, skipping:", currentTask.type);
 }
 
-function handleRemoveFlow() {
+async function handleRemoveFlow() {
   console.log("🧹 Starting REMOVE flow for:", currentTask);
 
-  // altijd size opnieuw selecteren (consistent met place flow)
+  if (await stopIfNeeded("start remove flow")) return;
+
   openSizeDropdownAndSelectForRemove(currentTask.size);
 }
 
@@ -268,12 +269,16 @@ function clickUpdateButtonForRemove(attempt = 0) {
               b.getBoundingClientRect().width * b.getBoundingClientRect().height
   )[0];
 
-  console.log("🧹 Clicking real Update control:", updateEl.innerText);
-  clickElement(updateEl);
-
-  setTimeout(() => {
-    waitForRemoveEditPage();
-  }, 2500);
+  (async () => {
+    if (await stopIfNeeded("before update click")) return;
+  
+    console.log("🧹 Clicking real Update control:", updateEl.innerText);
+    clickElement(updateEl);
+  
+    setTimeout(() => {
+      waitForRemoveEditPage();
+    }, 2500);
+  })();
 }
 
 function waitForRemoveEditPage(attempt = 0) {
@@ -353,12 +358,16 @@ function clickDeleteBidButtonForRemove(attempt = 0) {
     return;
   }
 
-  console.log("🧹 Clicking Delete Bid:", deleteBtn.innerText);
-  clickElement(deleteBtn);
+  (async () => {
+    if (await stopIfNeeded("before delete bid click")) return;
   
-  setTimeout(() => {
-    waitForReturnToProductPageAfterRemove();
-  }, 2000);
+    console.log("🧹 Clicking Delete Bid:", deleteBtn.innerText);
+    clickElement(deleteBtn);
+  
+    setTimeout(() => {
+      waitForReturnToProductPageAfterRemove();
+    }, 2000);
+  })();
 }
 
 function waitForReturnToProductPageAfterRemove(attempt = 0) {
@@ -395,13 +404,15 @@ function waitForReturnToProductPageAfterRemove(attempt = 0) {
   }, 1000);
 }
 
-function verifyRemovedBidForTargetSize() {
+async function verifyRemovedBidForTargetSize() {
   if (!currentTask) {
     reportTaskResult("BID_REMOVE_FAILED", {
       errorMessage: "No currentTask available during post-delete verification"
     });
     return;
   }
+
+  if (await stopIfNeeded("before remove verification")) return;
 
   console.log("🧹 Verifying removed bid for target size:", currentTask.size);
   openSizeDropdownAndSelectForRemoveVerification(currentTask.size);
@@ -848,10 +859,6 @@ function reportTaskResult(action, extra = {}) {
     },
     (response) => {
       console.log("Backend result response:", response);
-
-      setTimeout(() => {
-        window.close();
-      }, 1000);
     }
   );
 }
