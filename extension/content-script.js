@@ -219,26 +219,62 @@ function handleVerifyBidsPage(attempt = 0) {
     return;
   }
 
-  setInputValue(searchInput, currentTask.sku);
+  const currentValue = normalizeText(searchInput.value || "");
+  const targetSku = normalizeText(currentTask.sku);
+  const expectedSizeText = getExpectedEuSizeText(currentTask.size);
 
-  setTimeout(() => {
-    const pageText = getPageText();
-    const expectedSizeText = getExpectedEuSizeText(currentTask.size);
-    const sizeFound =
-      pageText.includes(`eu ${normalizedSize}`) ||
-      pageText.includes(normalizedSize);
+  console.log("🔍 Expected size text:", expectedSizeText);
 
-    if (sizeFound) {
-      console.log("✅ Verify: bid still live");
-      reportTaskResult("BID_VERIFIED_STILL_LIVE");
-      return;
-    }
+  if (currentValue !== targetSku) {
+    setInputValue(searchInput, currentTask.sku);
 
-    console.log("🔍 Verify: bid not found on bids page, checking orders...");
+    setTimeout(() => {
+      handleVerifyBidsPage(attempt + 1);
+    }, 2000);
+    return;
+  }
+
+  const pageText = getPageText();
+
+  // 1. expliciete empty state
+  if (
+    pageText.includes("you don't have active bids") ||
+    pageText.includes("items that you are bidding on will show up here")
+  ) {
+    console.log("🔍 Verify: no active bids found, checking orders...");
     goToVerifyOrdersPage();
-  }, 2000);
-}
+    return;
+  }
 
+  // 2. alleen rows/cards checken, niet hele page text
+  const rowCandidates = Array.from(
+    document.querySelectorAll("tr, [role='row'], li, article, div")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    return text.includes(expectedSizeText);
+  });
+
+  const matchingBidRow = rowCandidates.find((row) => {
+    const text = normalizeText(row.innerText);
+    return text.includes(expectedSizeText);
+  });
+
+  if (matchingBidRow) {
+    console.log("✅ Verify: bid still live");
+    reportTaskResult("BID_VERIFIED_STILL_LIVE");
+    return;
+  }
+
+  console.log("🔍 Verify: bid not found on bids page, checking orders...");
+  goToVerifyOrdersPage();
+}
 function extractOrderNumberFromText(text) {
   const raw = String(text || "");
 
@@ -280,50 +316,59 @@ function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  setInputValue(searchInput, currentTask.sku);
+  const currentValue = normalizeText(searchInput.value || "");
+  const targetSku = normalizeText(currentTask.sku);
+  const expectedSizeText = getExpectedEuSizeText(currentTask.size);
 
-  setTimeout(() => {
-    const expectedSizeText = getExpectedEuSizeText(currentTask.size);
+  console.log("🔍 Expected size text:", expectedSizeText);
 
-    const rows = Array.from(document.querySelectorAll("tr, [role='row'], li, article, div"))
-      .filter((el) => {
-        const text = normalizeText(el.innerText);
-        const rect = el.getBoundingClientRect();
-        const style = window.getComputedStyle(el);
-    
-        if (!text) return false;
-        if (style.visibility === "hidden" || style.display === "none") return false;
-        if (rect.width <= 0 || rect.height <= 0) return false;
-    
-        return text.includes(expectedSizeText);
-      });
-    
-    const matchingRow = rows.find((row) => {
-      const text = normalizeText(row.innerText);
+  if (currentValue !== targetSku) {
+    setInputValue(searchInput, currentTask.sku);
+
+    setTimeout(() => {
+      handleVerifyOrdersPage(attempt + 1);
+    }, 2000);
+    return;
+  }
+
+  const rows = Array.from(document.querySelectorAll("tr, [role='row'], li, article, div"))
+    .filter((el) => {
+      const text = normalizeText(el.innerText);
+      const rect = el.getBoundingClientRect();
+      const style = window.getComputedStyle(el);
+
+      if (!text) return false;
+      if (style.visibility === "hidden" || style.display === "none") return false;
+      if (rect.width <= 0 || rect.height <= 0) return false;
+
       return text.includes(expectedSizeText);
     });
 
-    if (!matchingRow) {
-      console.log("❌ Verify: no matching order found");
-      reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
-      return;
-    }
+  const matchingRow = rows.find((row) => {
+    const text = normalizeText(row.innerText);
+    return text.includes(expectedSizeText);
+  });
 
-    const orderNumber = extractOrderNumberFromText(matchingRow.innerText);
+  if (!matchingRow) {
+    console.log("❌ Verify: no matching order found");
+    reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
+    return;
+  }
 
-    if (!orderNumber) {
-      reportTaskResult("VERIFY_FAILED", {
-        errorMessage: "Matching order found but could not extract order number"
-      });
-      return;
-    }
+  const orderNumber = extractOrderNumberFromText(matchingRow.innerText);
 
-    console.log("✅ Verify: matching order found", { orderNumber });
-
-    reportTaskResult("ORDER_DETECTED_FROM_ACCEPTED_BID", {
-      orderNumber
+  if (!orderNumber) {
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Matching order found but could not extract order number"
     });
-  }, 2000);
+    return;
+  }
+
+  console.log("✅ Verify: matching order found", { orderNumber });
+
+  reportTaskResult("ORDER_DETECTED_FROM_ACCEPTED_BID", {
+    orderNumber
+  });
 }
 
 function normalizeText(value) {
