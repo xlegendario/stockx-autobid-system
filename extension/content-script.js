@@ -57,7 +57,12 @@ async function handleTask() {
 
   if (await stopIfNeeded("handleTask")) return;
 
-  console.log("Handling task:", currentTask);
+  console.log("Handling task:", {
+    type: currentTask?.type,
+    recordId: currentTask?.recordId,
+    sku: currentTask?.sku,
+    size: currentTask?.size
+  });
 
   if (currentTask.type === "PLACE_OR_UPDATE") {
     openSizeDropdownAndSelect(currentTask.size);
@@ -73,7 +78,11 @@ async function handleTask() {
 }
 
 async function handleRemoveFlow() {
-  console.log("🧹 Starting REMOVE flow for:", currentTask);
+  console.log("🧹 Starting REMOVE flow:", {
+    recordId: currentTask?.recordId,
+    sku: currentTask?.sku,
+    size: currentTask?.size
+  });
 
   if (await stopIfNeeded("start remove flow")) return;
 
@@ -251,13 +260,6 @@ function clickUpdateButtonForRemove(attempt = 0) {
   });
 
   if (candidates.length === 0) {
-    console.log(
-      "REMOVE DEBUG visible update-like elements:",
-      Array.from(document.querySelectorAll("button, a, [role='button'], div, span"))
-        .map((el) => normalizeText(el.innerText))
-        .filter((text) => text.includes("update") || text.includes("your current bid"))
-    );
-
     console.log("REMOVE: Update button not found yet, retrying...");
     setTimeout(() => clickUpdateButtonForRemove(attempt + 1), 1000);
     return;
@@ -850,7 +852,12 @@ function reportTaskResult(action, extra = {}) {
     ...extra
   };
 
-  console.log("✅ Reporting task result:", payload);
+  console.log("✅ Reporting task result:", {
+    recordId: payload.recordId,
+    type: payload.type,
+    action: payload.action,
+    errorMessage: payload.errorMessage || ""
+  });
 
   chrome.runtime.sendMessage(
     {
