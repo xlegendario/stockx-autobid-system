@@ -139,9 +139,23 @@ function goToVerifyOrdersPage() {
   window.location.href = "https://stockx.com/buying/orders";
 }
 
-function findVisibleSearchInput() {
+function findVerifySearchInput() {
   const inputs = Array.from(document.querySelectorAll("input"));
 
+  const exactMatch = inputs.find((input) => {
+    const rect = input.getBoundingClientRect();
+    const style = window.getComputedStyle(input);
+
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    const placeholder = normalizeText(input.getAttribute("placeholder") || "");
+    return placeholder.includes("search name, order #");
+  });
+
+  if (exactMatch) return exactMatch;
+
+  // fallback, mocht StockX de placeholder iets wijzigen
   return inputs.find((input) => {
     const rect = input.getBoundingClientRect();
     const style = window.getComputedStyle(input);
@@ -153,10 +167,9 @@ function findVisibleSearchInput() {
     const ariaLabel = normalizeText(input.getAttribute("aria-label") || "");
 
     return (
-      placeholder.includes("search") ||
-      ariaLabel.includes("search") ||
-      input.type === "search" ||
-      input.type === "text"
+      placeholder.includes("order #") ||
+      placeholder.includes("search name") ||
+      ariaLabel.includes("order #")
     );
   });
 }
@@ -198,7 +211,7 @@ function handleVerifyBidsPage(attempt = 0) {
     return;
   }
 
-  const searchInput = findVisibleSearchInput();
+  const searchInput = findVerifySearchInput();
 
   if (!searchInput) {
     console.log("🔍 Bids search input not found yet, retrying...");
@@ -259,7 +272,7 @@ function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  const searchInput = findVisibleSearchInput();
+  const searchInput = findVerifySearchInput();
 
   if (!searchInput) {
     console.log("🔍 Orders search input not found yet, retrying...");
