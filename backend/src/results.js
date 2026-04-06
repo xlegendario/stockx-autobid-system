@@ -68,5 +68,49 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  // verify: bid still live -> geen LastAction flippen
+  if (payload.action === "BID_VERIFIED_STILL_LIVE") {
+    return await updateOrder(recordId, {
+      LastSyncAt: now,
+      ErrorMessage: ""
+    });
+  }
+
+  if (payload.action === "BID_MISSING_NO_ORDER_FOUND") {
+    return await updateOrder(recordId, {
+      LastAction: "BID_MISSING_NO_ORDER_FOUND",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+
+  if (payload.action === "BID_MISSING_ORDER_ALREADY_LINKED") {
+    return await updateOrder(recordId, {
+      LastAction: "BID_MISSING_ORDER_ALREADY_LINKED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+
+  if (payload.action === "ORDER_DETECTED_FROM_ACCEPTED_BID") {
+    return await updateOrder(recordId, {
+      "Fulfillment Status": "StockX Processing",
+      BidPlaced: false,
+      CurrentBid: null,
+      LastAction: "ORDER_PLACED",
+      LastSyncAt: now,
+      "StockX Order Number": payload.orderNumber || "",
+      ErrorMessage: ""
+    });
+  }
+
+  if (payload.action === "VERIFY_FAILED") {
+    return await updateOrder(recordId, {
+      LastAction: "VERIFY_FAILED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Verify flow failed"
+    });
+  }
+
   throw new Error("Unknown task result type/action");
 }
