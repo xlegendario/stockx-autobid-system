@@ -175,8 +175,6 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     return true;
   });
 
-  if (filtered.length === 0) return null;
-
   const groups = {};
 
   for (const record of filtered) {
@@ -311,46 +309,5 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     };
   }
   
-  return null;
-
-  if (!chosen) return null;
-
-  const fields = chosen.fields;
-  const sku = getSku(fields);
-  const size = fields["Size"];
-  const maxBid = getMaxBid(fields);
-
-  let stockxUrl = fields["StockX URL"] || null;
-
-  if (!stockxUrl) {
-    try {
-      const resolved = await resolveStockxUrlBySku(sku);
-      stockxUrl = resolved.stockxUrl;
-    } catch {
-      stockxUrl = null;
-    }
-  }
-
-  if (needsBid(fields)) {
-    return {
-      type: "PLACE_OR_UPDATE",
-      recordId: chosen.id,
-      sku,
-      size,
-      maxBid,
-      stockxUrl
-    };
-  }
-
-  if (needsRemoval(fields)) {
-    return {
-      type: "REMOVE",
-      recordId: chosen.id,
-      sku,
-      size,
-      stockxUrl
-    };
-  }
-
   return null;
 }
