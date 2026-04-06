@@ -183,12 +183,10 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     groups[key].push(record);
   }
 
-  // Sorteer oudste eerst binnen iedere group
   Object.values(groups).forEach((group) => {
     group.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime));
   });
 
-  // Eerst alle PLACE/UPDATE candidates verzamelen
   const placeCandidates = [];
   const removeCandidates = [];
   const verifyCandidates = [];
@@ -208,7 +206,6 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     }
   }
 
-  // VERIFY candidates uit active bids
   for (const record of activeBidRecords) {
     const f = record.fields;
   
@@ -233,7 +230,6 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     verifyCandidates.push(record);
   }
 
-  // Prioriteit: PLACE_OR_UPDATE boven REMOVE
   const chosenRemove =
     removeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
   
