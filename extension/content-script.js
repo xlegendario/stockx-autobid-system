@@ -223,7 +223,7 @@ function handleVerifyBidsPage(attempt = 0) {
 
   setTimeout(() => {
     const pageText = getPageText();
-    const normalizedSize = normalizeText(currentTask.size);
+    const expectedSizeText = getExpectedEuSizeText(currentTask.size);
     const sizeFound =
       pageText.includes(`eu ${normalizedSize}`) ||
       pageText.includes(normalizedSize);
@@ -283,28 +283,24 @@ function handleVerifyOrdersPage(attempt = 0) {
   setInputValue(searchInput, currentTask.sku);
 
   setTimeout(() => {
-    const normalizedSize = normalizeText(currentTask.size);
+    const expectedSizeText = getExpectedEuSizeText(currentTask.size);
 
     const rows = Array.from(document.querySelectorAll("tr, [role='row'], li, article, div"))
       .filter((el) => {
         const text = normalizeText(el.innerText);
         const rect = el.getBoundingClientRect();
         const style = window.getComputedStyle(el);
-
+    
         if (!text) return false;
         if (style.visibility === "hidden" || style.display === "none") return false;
         if (rect.width <= 0 || rect.height <= 0) return false;
-
-        return (
-          text.includes(currentTask.sku.toLowerCase()) ||
-          text.includes(`eu ${normalizedSize}`) ||
-          text.includes(normalizedSize)
-        );
+    
+        return text.includes(expectedSizeText);
       });
-
+    
     const matchingRow = rows.find((row) => {
       const text = normalizeText(row.innerText);
-      return text.includes(`eu ${normalizedSize}`) || text.includes(normalizedSize);
+      return text.includes(expectedSizeText);
     });
 
     if (!matchingRow) {
@@ -336,6 +332,11 @@ function normalizeText(value) {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .replace(",", ".");
+}
+
+function getExpectedEuSizeText(size) {
+  const normalized = normalizeText(size);
+  return `eu ${normalized}`;
 }
 
 function openSizeDropdownAndSelect(targetSize) {
