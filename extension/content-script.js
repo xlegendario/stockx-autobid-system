@@ -65,7 +65,7 @@ async function handleTask() {
   });
 
   if (currentTask.type === "PLACE_OR_UPDATE") {
-    openSizeDropdownAndSelect(currentTask.size);
+    goToOfferPage();
     return;
   }
   
@@ -509,18 +509,23 @@ function checkIfBidRemovedForSelectedSize(attempt = 0) {
   }, 1000);
 }
 
-function goToOfferPage(size) {
+function goToOfferPage() {
   const currentUrl = new URL(window.location.href);
-  const slug = currentUrl.pathname.replace(/^\/+/, "");
+  let slug = currentUrl.pathname.replace(/^\/+/, "");
 
   if (!slug) {
     console.log("Could not determine product slug from URL");
     return;
   }
 
-  const offerUrl = `https://stockx.com/buy/${slug}?defaultBid=true&size=${encodeURIComponent(String(size).trim())}`;
+  // als we ooit al op /buy/slug zitten, strip dan alleen de buy-prefix
+  if (slug.startsWith("buy/")) {
+    slug = slug.replace(/^buy\//, "");
+  }
 
-  console.log("🔥 Navigating directly to offer page:", offerUrl);
+  const offerUrl = `https://stockx.com/buy/${slug}`;
+
+  console.log("🔥 Navigating directly to buy page:", offerUrl);
   window.location.href = offerUrl;
 }
 
