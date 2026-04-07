@@ -43,6 +43,14 @@ window.addEventListener("load", async () => {
       }, 1500);
       return;
     }
+  
+    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("page load verify order detail page")) return;
+        handleVerifyOrderDetailPage();
+      }, 1500);
+      return;
+    }
   }
   
   if (window.location.pathname.includes("/buy/")) {
@@ -137,6 +145,52 @@ function goToVerifyBidsPage() {
 function goToVerifyOrdersPage() {
   console.log("🔍 Navigating to orders page");
   window.location.href = "https://stockx.com/buying/orders";
+}
+
+async function storePendingVerifyOrderMeta(meta) {
+  await chrome.storage.local.set({
+    pendingVerifyOrderMeta: meta
+  });
+}
+
+async function getPendingVerifyOrderMeta() {
+  const data = await chrome.storage.local.get(["pendingVerifyOrderMeta"]);
+  return data.pendingVerifyOrderMeta || null;
+}
+
+async function clearPendingVerifyOrderMeta() {
+  await chrome.storage.local.remove(["pendingVerifyOrderMeta"]);
+}
+
+function extractFinalStockXPriceFromText(text) {
+  const raw = String(text || "");
+
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    const label = normalizeText(lines[i]);
+
+    if (label === "total") {
+      const candidate = lines[i + 1];
+      const match = candidate.match(/€\s*([\d.,]+)/);
+
+      if (match?.[1]) {
+        const parsed = Number(match[1].replace(/\./g, "").replace(",", "."));
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+  }
+
+  const fallbackMatch = raw.match(/Total[\s\S]{0,60}?€\s*([\d.,]+)/i);
+  if (fallbackMatch?.[1]) {
+    const parsed = Number(fallbackMatch[1].replace(/\./g, "").replace(",", "."));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
 }
 
 function findVerifySearchInput() {
@@ -331,7 +385,7 @@ function extractOrderNumberFromText(text) {
   return null;
 }
 
-function handleVerifyOrdersPage(attempt = 0) {
+async function handleVerifyOrdersPage(attempt = 0) {
   console.log("🔍 Checking orders page...");
 
   if (!currentTask) {
@@ -374,7 +428,6 @@ function handleVerifyOrdersPage(attempt = 0) {
   const rawPageText = document.body?.innerText || "";
   const pageText = normalizeText(rawPageText);
 
-  // expliciete empty state
   if (
     pageText.includes("you don't have any pending orders") ||
     pageText.includes("items that are being shipped to you will show up here")
@@ -385,8 +438,6 @@ function handleVerifyOrdersPage(attempt = 0) {
   }
 
   const expectedSizeLine = `size: ${expectedSizeText}`;
-
-  // check direct op de page text, want na SKU-search is de page al gefilterd
   const hasMatchingSize =
     pageText.includes(expectedSizeLine) ||
     pageText.includes(expectedSizeText);
@@ -406,10 +457,102 @@ function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  console.log("✅ Verify: matching order found", { orderNumber });
+  const detailLink = Array.from(document.querySelectorAll('a[href*="/buying/"]'))
+    .find((a) => {
+      const href = a.getAttribute("href") || "";
+      const rowText = normalizeText(
+        a.innerText ||
+        a.closest("tr, li, article, div")?.innerText ||
+        ""
+      );
+
+      return (
+        /^\/buying\/\d+/.test(href) &&
+        (rowText.includes(expectedSizeText) || rowText.includes(`size: ${expectedSizeText}`))
+      );
+    });
+
+  if (!detailLink) {
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: `Matching order found (${orderNumber}) but could not locate detail link`
+    });
+    return;
+  }
+
+  const href = detailLink.getAttribute("href");
+  const detailUrl = href.startsWith("http") ? href : `https://stockx.com${href}`;
+
+  console.log("✅ Verify: matching order found, opening detail page", {
+    orderNumber,
+    detailUrl
+  });
+
+  await storePendingVerifyOrderMeta({
+    orderNumber,
+    recordId: currentTask.recordId
+  });
+
+  window.location.href = detailUrl;
+}
+
+async function handleVerifyOrderDetailPage(attempt = 0) {
+  console.log("🔍 Checking order detail page...");
+
+  if (!currentTask) {
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "No currentTask available on order detail page"
+    });
+    return;
+  }
+
+  const pendingMeta = await getPendingVerifyOrderMeta();
+
+  if (!pendingMeta?.orderNumber) {
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Missing pending verify order metadata on detail page"
+    });
+    return;
+  }
+
+  if (attempt > 12) {
+    await clearPendingVerifyOrderMeta();
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Could not extract final StockX price from order detail page"
+    });
+    return;
+  }
+
+  const rawPageText = document.body?.innerText || "";
+  const pageText = normalizeText(rawPageText);
+
+  if (!pageText.includes("summary") || !pageText.includes("total")) {
+    console.log("🔍 Order detail page not ready yet, retrying...");
+    setTimeout(() => {
+      handleVerifyOrderDetailPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  const finalStockXPrice = extractFinalStockXPriceFromText(rawPageText);
+
+  if (!Number.isFinite(finalStockXPrice)) {
+    console.log("🔍 Could not parse final StockX price yet, retrying...");
+    setTimeout(() => {
+      handleVerifyOrderDetailPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  console.log("✅ Verify: extracted final StockX price", {
+    orderNumber: pendingMeta.orderNumber,
+    finalStockXPrice
+  });
+
+  await clearPendingVerifyOrderMeta();
 
   reportTaskResult("ORDER_DETECTED_FROM_ACCEPTED_BID", {
-    orderNumber
+    orderNumber: pendingMeta.orderNumber,
+    finalStockXPrice
   });
 }
 
