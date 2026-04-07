@@ -21,6 +21,16 @@ function isReadyForVerify(fields, cooldownMinutes = 10) {
   return Date.now() - lastSync.getTime() >= cooldownMs;
 }
 
+function getLastSyncTimestamp(fields) {
+  const raw = fields["LastSyncAt"];
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return parsed.getTime();
+}
+
 function normalizeLookup(value) {
   if (Array.isArray(value)) return value[0];
   return value;
@@ -341,7 +351,26 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
   }
   
   const chosenVerify =
-    verifyCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+    verifyCandidates.sort((a, b) => {
+      const aLastSync = getLastSyncTimestamp(a.fields);
+      const bLastSync = getLastSyncTimestamp(b.fields);
+
+      // Records die nog nooit gesynct zijn eerst
+      if (aLastSync === null && bLastSync === null) {
+        return new Date(a.createdTime) - new Date(b.createdTime);
+      }
+
+      if (aLastSync === null) return -1;
+      if (bLastSync === null) return 1;
+
+      // Daarna: oudste LastSyncAt eerst
+      if (aLastSync !== bLastSync) {
+        return aLastSync - bLastSync;
+      }
+
+      // Tie-breaker: oudste record eerst
+      return new Date(a.createdTime) - new Date(b.createdTime);
+    })[0];
   
   if (chosenVerify) {
     const fields = chosenVerify.fields;
