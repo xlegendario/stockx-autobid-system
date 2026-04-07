@@ -1190,7 +1190,13 @@ function formatBidValue(value) {
 }
 
 function getPlaceOrUpdateSuccessAction() {
-  const currentBid = Number(currentTask?.currentBid);
+  const raw = currentTask?.currentBid;
+
+  if (raw === null || raw === undefined || raw === "") {
+    return "BID_CREATED";
+  }
+
+  const currentBid = Number(raw);
   return Number.isFinite(currentBid) ? "BID_UPDATED" : "BID_CREATED";
 }
 
