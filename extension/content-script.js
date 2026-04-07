@@ -194,8 +194,8 @@ function extractFinalStockXPriceFromText(text) {
 }
 
 function findMatchingOrderRow(expectedSizeText) {
-  const candidates = Array.from(
-    document.querySelectorAll("tr, [role='row'], li, article, div, span, a")
+  const rowCandidates = Array.from(
+    document.querySelectorAll("tr, [role='row']")
   ).filter((el) => {
     const text = normalizeText(el.innerText);
     const rect = el.getBoundingClientRect();
@@ -205,22 +205,31 @@ function findMatchingOrderRow(expectedSizeText) {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
+    // header row uitsluiten
+    if (
+      text.includes("item") &&
+      text.includes("order number") &&
+      text.includes("purchase date") &&
+      text.includes("status")
+    ) {
+      return false;
+    }
+
     return (
       text.includes(expectedSizeText) ||
       text.includes(`size: ${expectedSizeText}`)
     );
   });
 
-  if (candidates.length === 0) return null;
+  if (rowCandidates.length === 0) return null;
 
-  // pak de grootste container waarin de size staat
-  return candidates.sort((a, b) => {
+  // pak de breedste/grootste row = meestal de echte klikbare orderstrook
+  return rowCandidates.sort((a, b) => {
     const aRect = a.getBoundingClientRect();
     const bRect = b.getBoundingClientRect();
     return (bRect.width * bRect.height) - (aRect.width * aRect.height);
   })[0];
 }
-
 function clickOrderRowForDetail(row) {
   if (!row) return false;
 
