@@ -528,9 +528,13 @@ async function handleVerifyOrdersPage(attempt = 0) {
   
   clickOrderRowForDetail(matchingRow);
   
-  setTimeout(() => {
+  setTimeout(async () => {
     if (/^\/buying\/\d+/.test(window.location.pathname)) {
       console.log("✅ Navigated to order detail page");
+  
+      if (await stopIfNeeded("after order detail navigation")) return;
+  
+      handleVerifyOrderDetailPage();
       return;
     }
   
