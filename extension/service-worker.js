@@ -4,14 +4,57 @@ let isRunnerEnabled = false;
 let isTaskInProgress = false;
 
 const LOOP_DELAY_MS = 8000;
-const NEXT_TASK_DELAY_AFTER_SUCCESS_MS = 5000;
 const ERROR_RETRY_DELAY_MS = 15000;
+const TASK_TIMEOUT_MS = 120000; // 2 minuten
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
+let currentTaskStartedAt = null;
+
+function resetInProgressState() {
+  isTaskInProgress = false;
+  currentTaskStartedAt = null;
+}
+
+async function clearCurrentTaskState() {
+  resetInProgressState();
+
+  await chrome.storage.local.set({
+    currentTask: null
+  });
+}
+
+async function recoverIfTaskTimedOut() {
+  if (!isTaskInProgress) return false;
+  if (!currentTaskStartedAt) return false;
+
+  const elapsed = Date.now() - currentTaskStartedAt;
+  if (elapsed < TASK_TIMEOUT_MS) return false;
+
+  console.warn("Task timed out, resetting runner state");
+
+  await clearCurrentTaskState();
+
+  return true;
+}
 
 async function loadState() {
-  const data = await chrome.storage.local.get(["runnerEnabled", "forceStop"]);
+  const data = await chrome.storage.local.get([
+    "runnerEnabled",
+    "forceStop",
+    "currentTaskStartedAt"
+  ]);
+
   isRunnerEnabled = data.runnerEnabled === true;
+  currentTaskStartedAt =
+    typeof data.currentTaskStartedAt === "number"
+      ? data.currentTaskStartedAt
+      : null;
 }
+
+chrome.storage.local.get(["currentTask"]).then((data) => {
+  if (data.currentTask) {
+    isTaskInProgress = true;
+  }
+});
 
 async function saveState(forceStop = false) {
   await chrome.storage.local.set({
@@ -85,17 +128,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "TASK_COMPLETED") {
     submitTaskResult(message.payload)
-      .then((result) => {
-        isTaskInProgress = false;
-
-        if (isRunnerEnabled) {
-          scheduleNextRun(NEXT_TASK_DELAY_AFTER_SUCCESS_MS);
-        }
+      .then(async (result) => {
+        await clearCurrentTaskState();
 
         sendResponse({ ok: true, result });
+
+        if (isRunnerEnabled) {
+          runLoop().catch((err) => {
+            console.error("Runner loop error after success:", err);
+            resetInProgressState();
+
+            if (isRunnerEnabled) {
+              scheduleNextRun(ERROR_RETRY_DELAY_MS);
+            }
+          });
+        }
       })
-      .catch((err) => {
-        isTaskInProgress = false;
+      .catch(async (err) => {
+        await clearCurrentTaskState();
 
         if (isRunnerEnabled) {
           scheduleNextRun(ERROR_RETRY_DELAY_MS);
@@ -110,12 +160,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== RUNNER_ALARM_NAME) return;
-  
-  runLoop().catch((err) => {
+
+  runLoop().catch(async (err) => {
     console.error("Runner loop error:", err);
-  
-    isTaskInProgress = false;
-  
+
+    await clearCurrentTaskState();
+
     if (isRunnerEnabled) {
       scheduleNextRun(ERROR_RETRY_DELAY_MS);
     }
@@ -154,7 +204,7 @@ async function stopRunner() {
 
 async function forceStopRunner() {
   isRunnerEnabled = false;
-  isTaskInProgress = false;
+  resetInProgressState();
 
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
 
@@ -188,6 +238,9 @@ async function forceStopRunner() {
 
 async function runLoop() {
   if (!isRunnerEnabled) return;
+
+  await recoverIfTaskTimedOut();
+
   if (isTaskInProgress) return;
 
   const result = await handleSingleTask();
@@ -254,10 +307,12 @@ async function handleSingleTask() {
   const task = taskData.task;
 
   isTaskInProgress = true;
+  currentTaskStartedAt = Date.now();
 
   await chrome.storage.local.set({
     currentTask: task,
-    forceStop: false
+    forceStop: false,
+    currentTaskStartedAt
   });
 
   const url = buildStockXUrl(task);
