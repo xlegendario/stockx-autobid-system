@@ -106,7 +106,7 @@ function getCurrentBid(fields) {
 }
 
 function shouldPlaceOrUpdate(fields) {
-  if (!needsBid(fields)) return false;
+  if (needsRemoval(fields)) return false;
 
   const target = getCurrentStockXBid(fields);
   const current = getCurrentBid(fields);
