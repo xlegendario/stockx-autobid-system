@@ -194,11 +194,9 @@ function extractFinalStockXPriceFromText(text) {
 }
 
 function findMatchingOrderRow(expectedSizeText) {
-  const allElements = Array.from(
-    document.querySelectorAll("tr, [role='row'], li, article, div, a, button, span")
-  );
-
-  const matchingElement = allElements.find((el) => {
+  const rowCandidates = Array.from(
+    document.querySelectorAll("tr, [role='row']")
+  ).filter((el) => {
     const text = normalizeText(el.innerText);
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
@@ -207,41 +205,44 @@ function findMatchingOrderRow(expectedSizeText) {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
+    if (
+      text.includes("order number") &&
+      text.includes("purchase date") &&
+      text.includes("status")
+    ) {
+      return false;
+    }
+
     return (
       text.includes(expectedSizeText) ||
       text.includes(`size: ${expectedSizeText}`)
     );
   });
 
-  if (!matchingElement) return null;
+  if (rowCandidates.length === 0) return null;
 
-  const clickableAncestor =
-    matchingElement.closest('a[href*="/buying/"]') ||
-    matchingElement.closest('[role="link"]') ||
-    matchingElement.closest('button') ||
-    matchingElement.closest('tr') ||
-    matchingElement.closest('[role="row"]') ||
-    matchingElement.closest('li') ||
-    matchingElement.closest('article') ||
-    matchingElement.closest('div');
-
-  return clickableAncestor || matchingElement;
+  // pak de breedste row; dat is meestal de echte klikbare order-strook
+  return rowCandidates.sort((a, b) => {
+    const aRect = a.getBoundingClientRect();
+    const bRect = b.getBoundingClientRect();
+    return (bRect.width * bRect.height) - (aRect.width * aRect.height);
+  })[0];
 }
 
 function clickOrderRowForDetail(row) {
   if (!row) return false;
 
-  const clickableChild = row.querySelector(
-    'a, button, [role="link"], [role="button"]'
-  );
+  console.log("🔍 Clicking full matching order row");
 
-  if (clickableChild) {
-    console.log("🔍 Clicking clickable child inside matching order row");
-    return clickElement(clickableChild);
+  row.scrollIntoView({ block: "center", inline: "center" });
+
+  try {
+    row.click();
+    return true;
+  } catch (err) {
+    console.log("🔍 Native row click failed, falling back to synthetic click");
+    return clickElement(row);
   }
-
-  console.log("🔍 Clicking matching order row directly");
-  return clickElement(row);
 }
 
 function findVerifySearchInput() {
