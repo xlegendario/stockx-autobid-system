@@ -193,6 +193,57 @@ function extractFinalStockXPriceFromText(text) {
   return null;
 }
 
+function findMatchingOrderRow(expectedSizeText) {
+  const allElements = Array.from(
+    document.querySelectorAll("tr, [role='row'], li, article, div, a, button, span")
+  );
+
+  const matchingElement = allElements.find((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    return (
+      text.includes(expectedSizeText) ||
+      text.includes(`size: ${expectedSizeText}`)
+    );
+  });
+
+  if (!matchingElement) return null;
+
+  const clickableAncestor =
+    matchingElement.closest('a[href*="/buying/"]') ||
+    matchingElement.closest('[role="link"]') ||
+    matchingElement.closest('button') ||
+    matchingElement.closest('tr') ||
+    matchingElement.closest('[role="row"]') ||
+    matchingElement.closest('li') ||
+    matchingElement.closest('article') ||
+    matchingElement.closest('div');
+
+  return clickableAncestor || matchingElement;
+}
+
+function clickOrderRowForDetail(row) {
+  if (!row) return false;
+
+  const clickableChild = row.querySelector(
+    'a, button, [role="link"], [role="button"]'
+  );
+
+  if (clickableChild) {
+    console.log("🔍 Clicking clickable child inside matching order row");
+    return clickElement(clickableChild);
+  }
+
+  console.log("🔍 Clicking matching order row directly");
+  return clickElement(row);
+}
+
 function findVerifySearchInput() {
   const inputs = Array.from(document.querySelectorAll("input"));
 
@@ -457,42 +508,34 @@ async function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  const detailLink = Array.from(document.querySelectorAll('a[href*="/buying/"]'))
-    .find((a) => {
-      const href = a.getAttribute("href") || "";
-      const rowText = normalizeText(
-        a.innerText ||
-        a.closest("tr, li, article, div")?.innerText ||
-        ""
-      );
+  const matchingRow = findMatchingOrderRow(expectedSizeText);
 
-      return (
-        /^\/buying\/\d+/.test(href) &&
-        (rowText.includes(expectedSizeText) || rowText.includes(`size: ${expectedSizeText}`))
-      );
-    });
-
-  if (!detailLink) {
+  if (!matchingRow) {
     reportTaskResult("VERIFY_FAILED", {
-      errorMessage: `Matching order found (${orderNumber}) but could not locate detail link`
+      errorMessage: `Matching order found (${orderNumber}) but could not locate clickable order row`
     });
     return;
   }
-
-  const href = detailLink.getAttribute("href");
-  const detailUrl = href.startsWith("http") ? href : `https://stockx.com${href}`;
-
-  console.log("✅ Verify: matching order found, opening detail page", {
-    orderNumber,
-    detailUrl
+  
+  console.log("✅ Verify: matching order found, clicking order row for detail page", {
+    orderNumber
   });
-
+  
   await storePendingVerifyOrderMeta({
     orderNumber,
     recordId: currentTask.recordId
   });
-
-  window.location.href = detailUrl;
+  
+  clickOrderRowForDetail(matchingRow);
+  
+  setTimeout(() => {
+    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      console.log("✅ Navigated to order detail page");
+      return;
+    }
+  
+    console.log("🔍 Order detail navigation not visible yet, waiting for page load...");
+  }, 1000);
 }
 
 async function handleVerifyOrderDetailPage(attempt = 0) {
