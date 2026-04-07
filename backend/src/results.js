@@ -122,6 +122,9 @@ export async function submitTaskResult(recordId, payload) {
       LastAction: "ORDER_PLACED",
       LastSyncAt: now,
       "StockX Order Number": orderNumber,
+      "Final StockX Price": Number.isFinite(Number(payload.finalStockXPrice))
+        ? Number(payload.finalStockXPrice)
+        : null,
       ErrorMessage: ""
     });
   }
