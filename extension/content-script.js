@@ -162,6 +162,42 @@ async function clearPendingVerifyOrderMeta() {
   await chrome.storage.local.remove(["pendingVerifyOrderMeta"]);
 }
 
+function parseMoneyValue(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+
+  const cleaned = text.replace(/[^\d.,-]/g, "");
+  if (!cleaned) return null;
+
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+
+  let normalized = cleaned;
+
+  if (hasComma && hasDot) {
+    // laatste separator is decimal separator
+    const lastComma = cleaned.lastIndexOf(",");
+    const lastDot = cleaned.lastIndexOf(".");
+
+    if (lastComma > lastDot) {
+      // voorbeeld: 1.234,56
+      normalized = cleaned.replace(/\./g, "").replace(",", ".");
+    } else {
+      // voorbeeld: 1,234.56
+      normalized = cleaned.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    // voorbeeld: 142,33
+    normalized = cleaned.replace(",", ".");
+  } else {
+    // voorbeeld: 142.33 of 14233
+    normalized = cleaned;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function extractFinalStockXPriceFromText(text) {
   const raw = String(text || "");
 
@@ -178,7 +214,7 @@ function extractFinalStockXPriceFromText(text) {
       const match = candidate.match(/€\s*([\d.,]+)/);
 
       if (match?.[1]) {
-        const parsed = Number(match[1].replace(/\./g, "").replace(",", "."));
+        const parsed = parseMoneyValue(match[1]);
         if (Number.isFinite(parsed)) return parsed;
       }
     }
@@ -186,7 +222,7 @@ function extractFinalStockXPriceFromText(text) {
 
   const fallbackMatch = raw.match(/Total[\s\S]{0,60}?€\s*([\d.,]+)/i);
   if (fallbackMatch?.[1]) {
-    const parsed = Number(fallbackMatch[1].replace(/\./g, "").replace(",", "."));
+    const parsed = parseMoneyValue(fallbackMatch[1]);
     if (Number.isFinite(parsed)) return parsed;
   }
 
