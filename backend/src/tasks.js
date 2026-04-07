@@ -8,6 +8,19 @@ function isVerifyCandidate(fields) {
   );
 }
 
+function isReadyForVerify(fields, cooldownMinutes = 10) {
+  if (!isVerifyCandidate(fields)) return false;
+
+  const raw = fields["LastSyncAt"];
+  if (!raw) return true;
+
+  const lastSync = new Date(raw);
+  if (Number.isNaN(lastSync.getTime())) return true;
+
+  const cooldownMs = cooldownMinutes * 60 * 1000;
+  return Date.now() - lastSync.getTime() >= cooldownMs;
+}
+
 function normalizeLookup(value) {
   if (Array.isArray(value)) return value[0];
   return value;
@@ -227,7 +240,7 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
       }
     }
   
-    if (!isVerifyCandidate(f)) continue;
+    if (!isReadyForVerify(f)) continue;
   
     verifyCandidates.push(record);
   }
