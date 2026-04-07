@@ -141,6 +141,7 @@ async function stopRunner() {
   isRunnerEnabled = false;
   await saveState(false);
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
+  await chrome.storage.local.set({ runnerTabId: null });
 
   return {
     ok: true,
@@ -160,7 +161,8 @@ async function forceStopRunner() {
   await chrome.storage.local.set({
     runnerEnabled: false,
     forceStop: true,
-    currentTask: null
+    currentTask: null,
+    runnerTabId: null
   });
 
   const tabs = await chrome.tabs.query({ url: ["*://stockx.com/*"] });
@@ -198,6 +200,39 @@ async function runLoop() {
   }
 }
 
+async function openOrReuseRunnerTab(url) {
+  const data = await chrome.storage.local.get(["runnerTabId"]);
+  const existingTabId = data.runnerTabId;
+
+  if (existingTabId) {
+    try {
+      const existingTab = await chrome.tabs.get(existingTabId);
+
+      if (existingTab?.id) {
+        const updatedTab = await chrome.tabs.update(existingTab.id, {
+          url,
+          active: true
+        });
+
+        return updatedTab;
+      }
+    } catch (err) {
+      console.warn("Stored runner tab no longer exists, creating new one");
+    }
+  }
+
+  const newTab = await chrome.tabs.create({
+    url,
+    active: true
+  });
+
+  if (newTab?.id) {
+    await chrome.storage.local.set({ runnerTabId: newTab.id });
+  }
+
+  return newTab;
+}
+
 async function handleSingleTask() {
   if (isTaskInProgress) {
     return {
@@ -227,9 +262,7 @@ async function handleSingleTask() {
 
   const url = buildStockXUrl(task);
 
-  const tab = await chrome.tabs.create({
-    url
-  });
+  const tab = await openOrReuseRunnerTab(url);
 
   return {
     ok: true,
