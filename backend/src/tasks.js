@@ -235,15 +235,15 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
   for (const key of Object.keys(groups)) {
     const group = groups[key];
 
-    const firstPlace = group.find((record) => shouldPlaceOrUpdate(record.fields));
-    if (firstPlace) {
-      placeCandidates.push(firstPlace);
-      continue;
-    }
-
     const firstRemove = group.find((record) => needsRemoval(record.fields));
     if (firstRemove) {
       removeCandidates.push(firstRemove);
+      continue;
+    }
+    
+    const firstPlace = group.find((record) => shouldPlaceOrUpdate(record.fields));
+    if (firstPlace) {
+      placeCandidates.push(firstPlace);
     }
   }
 
