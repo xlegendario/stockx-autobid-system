@@ -279,8 +279,12 @@ async function submitTaskResult(payload) {
 }
 
 function buildStockXUrl(task) {
+  // VERIFY flow → direct naar bids page
+  if (task.type === "VERIFY_BID_STATUS") {
+    return "https://stockx.com/buying/bids";
+  }
+
   if (task.stockxUrl) {
-    // extract slug uit bestaande URL
     const url = new URL(task.stockxUrl);
     let slug = url.pathname.replace(/^\/+/, "");
 
