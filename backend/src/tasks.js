@@ -61,13 +61,7 @@ function getSku(fields) {
   return fields["SKU (Soft)"] || fields["SKU"];
 }
 
-function getMaxBid(fields) {
-  const raw =
-    fields["Maximum Buying Price"] ??
-    fields["Max Bid"] ??
-    fields["Maximum Buying price"] ??
-    null;
-
+function parseMoney(raw) {
   if (raw === null || raw === undefined || raw === "") return null;
 
   if (typeof raw === "number") return raw;
@@ -76,6 +70,14 @@ function getMaxBid(fields) {
   const parsed = Number(cleaned);
 
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getMaxBid(fields) {
+  return parseMoney(
+    fields["Current StockX Bid"] ??
+    fields["Current stockx bid"] ??
+    null
+  );
 }
 
 function getAccountGroupKey(fields) {
@@ -118,7 +120,7 @@ export function debugRecords(records, runnerName) {
       bidPlacedParsed: hasBidPlaced(f),
       needsBidParsed: needsBid(f),
       needsRemovalParsed: needsRemoval(f),
-      maxBidParsed: getMaxBid(f),
+      currentStockXBidParsed: getMaxBid(f),
       included:
         isAutobidEnabled(f) &&
         getRunner(f) === normalizedRequestedRunner &&
@@ -266,6 +268,16 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     const sku = getSku(fields);
     const size = fields["Size"];
     const maxBid = getMaxBid(fields);
+
+    if (!Number.isFinite(maxBid)) {
+      console.log("❌ Skipping PLACE_OR_UPDATE: invalid Current StockX Bid", {
+        recordId: chosenPlace.id,
+        sku,
+        size,
+        maxBid
+      });
+      return null;
+    }
   
     let stockxUrl = fields["StockX URL"] || null;
   
