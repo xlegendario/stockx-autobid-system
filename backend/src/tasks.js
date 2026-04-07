@@ -335,6 +335,7 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
       sku,
       size,
       maxBid,
+      currentBid: getCurrentBid(fields),
       stockxUrl
     };
   }
