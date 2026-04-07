@@ -275,17 +275,57 @@ function handleVerifyBidsPage(attempt = 0) {
   console.log("🔍 Verify: bid not found on bids page, checking orders...");
   goToVerifyOrdersPage();
 }
+
 function extractOrderNumberFromText(text) {
   const raw = String(text || "");
 
-  const patterns = [
-    /order\s*(?:number|no\.?|#)\s*[:#]?\s*([a-z0-9-]+)/i,
-    /#\s*([a-z0-9-]{6,})/i
-  ];
+  // 1. beste match voor StockX order numbers zoals 03-TZCVTVJ5R0
+  const explicitStockxMatch = raw.match(/\b\d{2}-[A-Z0-9-]{6,}\b/i);
+  if (explicitStockxMatch?.[0]) {
+    return explicitStockxMatch[0].trim();
+  }
 
-  for (const pattern of patterns) {
-    const match = raw.match(pattern);
-    if (match?.[1]) return match[1].trim();
+  // 2. split in regels en probeer label-gebaseerde extractie
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    const label = normalizeText(lines[i]);
+
+    if (
+      label === "order number" ||
+      label === "order #" ||
+      label === "ordernumber"
+    ) {
+      const candidate = lines[i + 1]?.trim();
+
+      if (candidate && /^[A-Za-z0-9-]{6,}$/.test(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  // 3. fallback: zoek tokens die op ordernummer lijken
+  for (const line of lines) {
+    const tokenMatches = line.match(/\b[A-Za-z0-9-]{6,}\b/g) || [];
+
+    for (const token of tokenMatches) {
+      const normalized = normalizeText(token);
+
+      if (
+        normalized === "purchase" ||
+        normalized === "pending" ||
+        normalized === "status" ||
+        normalized === "number" ||
+        normalized === "order"
+      ) {
+        continue;
+      }
+
+      return token;
+    }
   }
 
   return null;
@@ -331,9 +371,10 @@ function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  const pageText = getPageText();
+  const rawPageText = document.body?.innerText || "";
+  const pageText = normalizeText(rawPageText);
 
-  // expliciete empty state op orders page
+  // expliciete empty state
   if (
     pageText.includes("you don't have any pending orders") ||
     pageText.includes("items that are being shipped to you will show up here")
@@ -343,31 +384,20 @@ function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  const rows = Array.from(document.querySelectorAll("tr, [role='row'], li, article, div"))
-    .filter((el) => {
-      const text = normalizeText(el.innerText);
-      const rect = el.getBoundingClientRect();
-      const style = window.getComputedStyle(el);
+  const expectedSizeLine = `size: ${expectedSizeText}`;
 
-      if (!text) return false;
-      if (style.visibility === "hidden" || style.display === "none") return false;
-      if (rect.width <= 0 || rect.height <= 0) return false;
+  // check direct op de page text, want na SKU-search is de page al gefilterd
+  const hasMatchingSize =
+    pageText.includes(expectedSizeLine) ||
+    pageText.includes(expectedSizeText);
 
-      return text.includes(expectedSizeText);
-    });
-
-  const matchingRow = rows.find((row) => {
-    const text = normalizeText(row.innerText);
-    return text.includes(expectedSizeText);
-  });
-
-  if (!matchingRow) {
+  if (!hasMatchingSize) {
     console.log("❌ Verify: no matching order found");
     reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
     return;
   }
 
-  const orderNumber = extractOrderNumberFromText(matchingRow.innerText);
+  const orderNumber = extractOrderNumberFromText(rawPageText);
 
   if (!orderNumber) {
     reportTaskResult("VERIFY_FAILED", {
@@ -382,6 +412,7 @@ function handleVerifyOrdersPage(attempt = 0) {
     orderNumber
   });
 }
+
 function normalizeText(value) {
   return String(value || "")
     .trim()
