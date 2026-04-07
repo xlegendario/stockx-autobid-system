@@ -194,8 +194,8 @@ function extractFinalStockXPriceFromText(text) {
 }
 
 function findMatchingOrderRow(expectedSizeText) {
-  const rowCandidates = Array.from(
-    document.querySelectorAll("tr, [role='row']")
+  const candidates = Array.from(
+    document.querySelectorAll("tr, [role='row'], li, article, div, span, a")
   ).filter((el) => {
     const text = normalizeText(el.innerText);
     const rect = el.getBoundingClientRect();
@@ -205,24 +205,16 @@ function findMatchingOrderRow(expectedSizeText) {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
-    if (
-      text.includes("order number") &&
-      text.includes("purchase date") &&
-      text.includes("status")
-    ) {
-      return false;
-    }
-
     return (
       text.includes(expectedSizeText) ||
       text.includes(`size: ${expectedSizeText}`)
     );
   });
 
-  if (rowCandidates.length === 0) return null;
+  if (candidates.length === 0) return null;
 
-  // pak de breedste row; dat is meestal de echte klikbare order-strook
-  return rowCandidates.sort((a, b) => {
+  // pak de grootste container waarin de size staat
+  return candidates.sort((a, b) => {
     const aRect = a.getBoundingClientRect();
     const bRect = b.getBoundingClientRect();
     return (bRect.width * bRect.height) - (aRect.width * aRect.height);
@@ -489,31 +481,29 @@ async function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  const expectedSizeLine = `size: ${expectedSizeText}`;
-  const hasMatchingSize =
-    pageText.includes(expectedSizeLine) ||
-    pageText.includes(expectedSizeText);
+  const matchingRow = findMatchingOrderRow(expectedSizeText);
 
-  if (!hasMatchingSize) {
+  if (!matchingRow) {
+    if (attempt < 12) {
+      console.log("🔍 Matching order row not found yet, retrying...");
+      setTimeout(() => {
+        handleVerifyOrdersPage(attempt + 1);
+      }, 1000);
+      return;
+    }
+  
     console.log("❌ Verify: no matching order found");
     reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
     return;
   }
-
-  const orderNumber = extractOrderNumberFromText(rawPageText);
-
+  
+  console.log("🔍 Matching order row text:", matchingRow.innerText);
+  
+  const orderNumber = extractOrderNumberFromText(matchingRow.innerText || rawPageText);
+  
   if (!orderNumber) {
     reportTaskResult("VERIFY_FAILED", {
       errorMessage: "Matching order found but could not extract order number"
-    });
-    return;
-  }
-
-  const matchingRow = findMatchingOrderRow(expectedSizeText);
-
-  if (!matchingRow) {
-    reportTaskResult("VERIFY_FAILED", {
-      errorMessage: `Matching order found (${orderNumber}) but could not locate clickable order row`
     });
     return;
   }
