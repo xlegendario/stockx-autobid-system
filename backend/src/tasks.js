@@ -93,6 +93,30 @@ function getMaxBid(fields) {
   );
 }
 
+function getCurrentStockXBid(fields) {
+  return parseMoney(
+    fields["Current StockX Bid"] ??
+    fields["Current stockx bid"] ??
+    null
+  );
+}
+
+function getCurrentBid(fields) {
+  return parseMoney(fields["CurrentBid"] ?? null);
+}
+
+function shouldPlaceOrUpdate(fields) {
+  if (!needsBid(fields)) return false;
+
+  const target = getCurrentStockXBid(fields);
+  const current = getCurrentBid(fields);
+
+  if (target === null) return false;
+  if (current === null) return true;
+
+  return target > current;
+}
+
 function getAccountGroupKey(fields) {
   const raw = normalizeLookup(fields["Merchant StockX Account Group Key"]);
 
@@ -133,11 +157,13 @@ export function debugRecords(records, runnerName) {
       bidPlacedParsed: hasBidPlaced(f),
       needsBidParsed: needsBid(f),
       needsRemovalParsed: needsRemoval(f),
-      currentStockXBidParsed: getMaxBid(f),
+      currentBidParsed: getCurrentBid(f),
+      currentStockXBidParsed: getCurrentStockXBid(f),
+      shouldPlaceOrUpdateParsed: shouldPlaceOrUpdate(f),
       included:
         isAutobidEnabled(f) &&
         getRunner(f) === normalizedRequestedRunner &&
-        (needsBid(f) || needsRemoval(f))
+        (shouldPlaceOrUpdate(f) || needsRemoval(f))
     };
   });
 }
@@ -179,10 +205,10 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
       }
     }
   
-    if (!needsBid(f) && !needsRemoval(f)) return false;
+    if (!shouldPlaceOrUpdate(f) && !needsRemoval(f)) return false;
   
-    // Block new bid placement if same account-group + sku + size already has active bid
-    if (needsBid(f)) {
+    // Block alleen echte nieuwe placements
+    if (shouldPlaceOrUpdate(f) && !hasBidPlaced(f)) {
       const key = getBlockingKey(f);
       if (activeBidKeys.has(key)) return false;
     }
@@ -209,7 +235,7 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
   for (const key of Object.keys(groups)) {
     const group = groups[key];
 
-    const firstPlace = group.find((record) => needsBid(record.fields));
+    const firstPlace = group.find((record) => shouldPlaceOrUpdate(record.fields));
     if (firstPlace) {
       placeCandidates.push(firstPlace);
       continue;
@@ -280,7 +306,7 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
     const fields = chosenPlace.fields;
     const sku = getSku(fields);
     const size = fields["Size"];
-    const maxBid = getMaxBid(fields);
+    const maxBid = getCurrentStockXBid(fields);
 
     if (!Number.isFinite(maxBid)) {
       console.log("❌ Skipping PLACE_OR_UPDATE: invalid Current StockX Bid", {
