@@ -1110,6 +1110,9 @@ function handleBuyPage(attempt = 0) {
 
   if (attempt > 20) {
     console.log("BUY page size not found after multiple attempts");
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "BUY page size not found after multiple attempts"
+    });
     return;
   }
 
@@ -1186,6 +1189,11 @@ function formatBidValue(value) {
   return String(Math.floor(num));
 }
 
+function getPlaceOrUpdateSuccessAction() {
+  const currentBid = Number(currentTask?.currentBid);
+  return Number.isFinite(currentBid) ? "BID_UPDATED" : "BID_CREATED";
+}
+
 function normalizeNumericString(value) {
   return String(value || "")
     .replace(/[^\d.,]/g, "")
@@ -1201,6 +1209,9 @@ function fillBidPrice(attempt = 0) {
 
   if (attempt > 15) {
     console.log("Could not find bid input after multiple attempts");
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Could not find bid input after multiple attempts"
+    });
     return;
   }
 
@@ -1216,6 +1227,9 @@ function fillBidPrice(attempt = 0) {
 
   if (!bidValue) {
     console.log("No valid maxBid available on task");
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "No valid bid value available on task"
+    });
     return;
   }
 
@@ -1273,6 +1287,9 @@ function fillBidPrice(attempt = 0) {
 function waitForReviewBidEnabled(attempt = 0) {
   if (attempt > 15) {
     console.log("Review button never became enabled");
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Review button never became enabled"
+    });
     return;
   }
 
@@ -1325,6 +1342,9 @@ function clickElement(el) {
 async function clickReviewBid(attempt = 0) {
   if (attempt > 15) {
     console.log("Review button not found after multiple attempts");
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Review button not found after multiple attempts"
+    });
     return;
   }
 
@@ -1354,6 +1374,9 @@ async function clickReviewBid(attempt = 0) {
 async function clickConfirmBid(attempt = 0) {
   if (attempt > 20) {
     console.log("Confirm/Place button not found after multiple attempts");
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Confirm/Place button not found after multiple attempts"
+    });
     return;
   }
 
@@ -1445,7 +1468,7 @@ function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     }
 
     if (normalized.includes("confirm bid")) {
-      reportTaskResult("BID_CREATED_FALLBACK", {
+      reportTaskResult("BID_UPDATE_FAILED", {
         errorMessage: "No success/failure screen detected after Confirm Bid"
       });
       return;
@@ -1472,7 +1495,7 @@ function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     pageText.includes("success") && pageText.includes("your bid")
   ) {
     console.log("✅ Bid success page detected");
-    reportTaskResult("BID_CREATED");
+    reportTaskResult(getPlaceOrUpdateSuccessAction());
     return;
   }
 
