@@ -19,6 +19,26 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  if (payload.action === "BID_UPDATED") {
+    return await updateOrder(recordId, {
+      BidPlaced: true,
+      CurrentBid: Number.isFinite(Number(payload.maxBid))
+        ? Math.floor(Number(payload.maxBid))
+        : null,
+      LastAction: "BID_UPDATED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+
+  if (payload.action === "BID_UPDATE_FAILED") {
+    return await updateOrder(recordId, {
+      LastAction: "BID_UPDATE_FAILED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Bid update failed"
+    });
+  }
+
   if (payload.action === "ORDER_PLACED" || payload.action === "ORDER_PLACED_FALLBACK") {
     return await updateOrder(recordId, {
       "Fulfillment Status": "StockX Processing",
