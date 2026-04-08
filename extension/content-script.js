@@ -47,24 +47,6 @@ window.addEventListener("load", async () => {
     return;
   }
 
-  if (pendingInstant?.orderNumber) {
-    if (window.location.pathname.includes("/buying/orders")) {
-      setTimeout(async () => {
-        if (await stopIfNeeded("instant order orders page")) return;
-        handleInstantOrderOrdersPage();
-      }, 1500);
-      return;
-    }
-
-    if (/^\/buying\/\d+/.test(window.location.pathname)) {
-      setTimeout(async () => {
-        if (await stopIfNeeded("instant order detail page")) return;
-        handleInstantOrderDetailPage();
-      }, 1500);
-      return;
-    }
-  }
-
   if (currentTask?.type === "VERIFY_BID_STATUS") {
     if (window.location.pathname.includes("/buying/bids")) {
       setTimeout(async () => {
