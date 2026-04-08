@@ -112,6 +112,43 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  if (payload.action === "ORDER_PLACED_WITH_DETAILS") {
+    const orderNumber = String(payload.orderNumber || "").trim();
+
+    if (!orderNumber) {
+      return await updateOrder(recordId, {
+        LastAction: "VERIFY_FAILED",
+        LastSyncAt: now,
+        ErrorMessage: "Instant order placed but no StockX order number was provided"
+      });
+    }
+
+    const existingRecords = await findOrdersPlacedByStockxOrderNumber(orderNumber);
+
+    const linkedToOtherRecord = existingRecords.some((record) => record.id !== recordId);
+
+    if (linkedToOtherRecord) {
+      return await updateOrder(recordId, {
+        LastAction: "BID_MISSING_ORDER_ALREADY_LINKED",
+        LastSyncAt: now,
+        ErrorMessage: `StockX order number ${orderNumber} is already linked to another record`
+      });
+    }
+
+    return await updateOrder(recordId, {
+      "Fulfillment Status": "StockX Processing",
+      BidPlaced: false,
+      CurrentBid: null,
+      LastAction: "ORDER_PLACED",
+      LastSyncAt: now,
+      "StockX Order Number": orderNumber,
+      "Final StockX Price": Number.isFinite(Number(payload.finalStockXPrice))
+        ? Number(payload.finalStockXPrice)
+        : null,
+      ErrorMessage: ""
+    });
+  }
+
   if (payload.action === "ORDER_DETECTED_FROM_ACCEPTED_BID") {
     const orderNumber = String(payload.orderNumber || "").trim();
   
