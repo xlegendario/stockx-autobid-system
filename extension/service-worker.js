@@ -391,7 +391,11 @@ async function submitTaskResult(payload) {
 function buildStockXUrl(task) {
   // VERIFY flow → direct naar bids page
   if (task.type === "VERIFY_BID_STATUS") {
-    return "https://stockx.com/buying/bids";
+  return "https://stockx.com/buying/bids";
+  }
+  
+  if (task.type === "SYNC_ORDER_STATUS") {
+    return "https://stockx.com/buying/orders";
   }
 
   if (task.stockxUrl) {
