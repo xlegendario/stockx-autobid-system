@@ -1093,6 +1093,15 @@ async function handleInstantOrderDetailPage(attempt = 0) {
     finalStockXPrice
   });
 
+  // currentTask tijdelijk herstellen zodat reportTaskResult wél kan submitten
+  currentTask = {
+    recordId: meta.recordId,
+    type: "PLACE_OR_UPDATE",
+    maxBid: null
+  };
+
+  await chrome.storage.local.set({ currentTask });
+
   await clearPendingInstantOrderMeta();
 
   reportTaskResult("ORDER_PLACED_WITH_DETAILS", {
