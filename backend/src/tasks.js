@@ -313,8 +313,6 @@ export async function buildTask(
   for (const record of orderSyncRecords) {
     const f = record.fields;
   
-    if (!isAutobidEnabled(f)) continue;
-  
     const runner = getRunner(f);
     const accountGroup = getAccountGroupKey(f);
     const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
