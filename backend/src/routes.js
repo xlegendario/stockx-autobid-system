@@ -1,5 +1,5 @@
 import express from "express";
-import { fetchOrders, fetchActiveBids } from "./airtable.js";
+import { fetchOrders, fetchActiveBids, fetchOrdersPlaced } from "./airtable.js";
 import { buildTask, debugRecords } from "./tasks.js";
 import { submitTaskResult } from "./results.js";
 
@@ -41,7 +41,15 @@ router.post("/tasks/next", async (req, res) => {
     
     const records = await fetchOrders();
     const activeBidRecords = await fetchActiveBids();
-    const task = await buildTask(records, runnerName, activeBidRecords, accountGroupKey);
+    const orderSyncRecords = await fetchOrdersPlaced();
+
+    const task = await buildTask(
+      records,
+      runnerName,
+      activeBidRecords,
+      accountGroupKey,
+      orderSyncRecords
+    );
 
     res.json({
       ok: true,
