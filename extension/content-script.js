@@ -1028,6 +1028,7 @@ async function handleInstantOrderOrdersPage(attempt = 0) {
 
   console.log("🔥 Instant order row found, opening detail page");
   clickOrderRowForDetail(row);
+  return;
 }
 
 async function handleInstantOrderDetailPage(attempt = 0) {
@@ -1080,6 +1081,7 @@ async function handleInstantOrderDetailPage(attempt = 0) {
     orderNumber: meta.orderNumber,
     finalStockXPrice
   });
+  return;
 }
 
 function normalizeText(value) {
