@@ -425,20 +425,6 @@ export async function buildTask(
       // Tie-breaker: oudste record eerst
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
-  
-  if (chosenVerify) {
-    const fields = chosenVerify.fields;
-    const sku = getSku(fields);
-    const size = fields["Size"];
-  
-    return {
-      type: "VERIFY_BID_STATUS",
-      recordId: chosenVerify.id,
-      sku,
-      size,
-      stockxUrl: fields["StockX URL"] || null
-    };
-  }
 
   const chosenOrderSync =
     orderSyncCandidates.sort((a, b) => {
@@ -466,6 +452,20 @@ export async function buildTask(
       type: "SYNC_ORDER_STATUS",
       recordId: chosenOrderSync.id,
       orderNumber: getStockxOrderNumber(fields),
+      stockxUrl: fields["StockX URL"] || null
+    };
+  }
+  
+  if (chosenVerify) {
+    const fields = chosenVerify.fields;
+    const sku = getSku(fields);
+    const size = fields["Size"];
+  
+    return {
+      type: "VERIFY_BID_STATUS",
+      recordId: chosenVerify.id,
+      sku,
+      size,
       stockxUrl: fields["StockX URL"] || null
     };
   }
