@@ -22,12 +22,30 @@ window.addEventListener("load", async () => {
   const stored = await chrome.storage.local.get("currentTask");
   currentTask = stored.currentTask || null;
 
+  const pendingInstant = await getPendingInstantOrderMeta();
+
+  if (pendingInstant?.orderNumber) {
+    if (window.location.pathname.includes("/buying/orders")) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("instant order orders page")) return;
+        handleInstantOrderOrdersPage();
+      }, 1500);
+      return;
+    }
+
+    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("instant order detail page")) return;
+        handleInstantOrderDetailPage();
+      }, 1500);
+      return;
+    }
+  }
+
   if (!currentTask) {
     console.log("No currentTask in storage");
     return;
   }
-
-  const pendingInstant = await getPendingInstantOrderMeta();
 
   if (pendingInstant?.orderNumber) {
     if (window.location.pathname.includes("/buying/orders")) {
