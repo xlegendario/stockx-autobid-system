@@ -52,6 +52,24 @@ window.addEventListener("load", async () => {
       return;
     }
   }
+
+  if (currentTask?.type === "SYNC_ORDER_STATUS") {
+    if (window.location.pathname.includes("/buying/orders")) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("page load order sync orders page")) return;
+        handleOrderSyncOrdersPage();
+      }, 1500);
+      return;
+    }
+
+    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("page load order sync detail page")) return;
+        handleOrderSyncDetailPage();
+      }, 1500);
+      return;
+    }
+  }
   
   if (window.location.pathname.includes("/buy/")) {
     setTimeout(async () => {
@@ -109,6 +127,11 @@ async function handleTask() {
     handleVerifyFlow();
     return;
   }
+
+  if (currentTask.type === "SYNC_ORDER_STATUS") {
+    handleOrderStatusSyncFlow();
+    return;
+  }
   
   console.log("Unknown task type, skipping:", currentTask.type);
 }
@@ -135,6 +158,17 @@ async function handleVerifyFlow() {
   if (await stopIfNeeded("start verify flow")) return;
 
   goToVerifyBidsPage();
+}
+
+async function handleOrderStatusSyncFlow() {
+  console.log("📦 Starting ORDER STATUS SYNC flow:", {
+    recordId: currentTask?.recordId,
+    orderNumber: currentTask?.orderNumber
+  });
+
+  if (await stopIfNeeded("start order status sync flow")) return;
+
+  goToVerifyOrdersPage();
 }
 
 function goToVerifyBidsPage() {
@@ -266,6 +300,42 @@ function findMatchingOrderRow(expectedSizeText) {
     return (bRect.width * bRect.height) - (aRect.width * aRect.height);
   })[0];
 }
+
+function findMatchingOrderRowByOrderNumber(orderNumber) {
+  const normalizedOrderNumber = normalizeText(orderNumber);
+
+  const rowCandidates = Array.from(
+    document.querySelectorAll("tr, [role='row']")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    if (
+      text.includes("item") &&
+      text.includes("order number") &&
+      text.includes("purchase date") &&
+      text.includes("status")
+    ) {
+      return false;
+    }
+
+    return text.includes(normalizedOrderNumber);
+  });
+
+  if (rowCandidates.length === 0) return null;
+
+  return rowCandidates.sort((a, b) => {
+    const aRect = a.getBoundingClientRect();
+    const bRect = b.getBoundingClientRect();
+    return (bRect.width * bRect.height) - (aRect.width * aRect.height);
+  })[0];
+}
+
 function clickOrderRowForDetail(row) {
   if (!row) return false;
 
@@ -474,6 +544,95 @@ function extractOrderNumberFromText(text) {
   return null;
 }
 
+function extractOrderStatusFromDetailPageText(text) {
+  const raw = String(text || "");
+
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return null;
+
+  const ignored = new Set([
+    "back",
+    "track order",
+    "summary",
+    "shipping",
+    "total",
+    "order details"
+  ]);
+
+  const candidate = lines.find((line) => {
+    const normalized = normalizeText(line);
+    if (!normalized) return false;
+    if (ignored.has(normalized)) return false;
+    if (normalized.startsWith("order number")) return false;
+    if (/^\d{2}-[a-z0-9-]{6,}$/i.test(line)) return false;
+    return true;
+  });
+
+  return candidate || null;
+}
+
+function findTrackOrderHref() {
+  const candidates = Array.from(
+    document.querySelectorAll("a, button, [role='button']")
+  );
+
+  const trackEl = candidates.find((el) => {
+    const text = normalizeText(el.innerText || "");
+    return text.includes("track order");
+  });
+
+  if (!trackEl) return null;
+
+  const anchor =
+    trackEl.closest("a") ||
+    trackEl.querySelector?.("a") ||
+    null;
+
+  const href =
+    anchor?.href ||
+    trackEl.getAttribute?.("href") ||
+    null;
+
+  return href || null;
+}
+
+function extractTrackingNumberFromUrl(url) {
+  if (!url) return null;
+
+  try {
+    const parsed = new URL(url, window.location.origin);
+
+    const directParams = [
+      "parcelNumber",
+      "trackingNumber",
+      "tracking_number",
+      "tracking"
+    ];
+
+    for (const key of directParams) {
+      const value = parsed.searchParams.get(key);
+      if (value) return value.trim();
+    }
+
+    const fullUrl = parsed.toString();
+
+    const queryMatch =
+      fullUrl.match(/[?&](?:parcelNumber|trackingNumber|tracking_number|tracking)=([^&]+)/i);
+
+    if (queryMatch?.[1]) {
+      return decodeURIComponent(queryMatch[1]).trim();
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function handleVerifyOrdersPage(attempt = 0) {
   console.log("🔍 Checking orders page...");
 
@@ -578,6 +737,74 @@ async function handleVerifyOrdersPage(attempt = 0) {
   }, 1000);
 }
 
+async function handleOrderSyncOrdersPage(attempt = 0) {
+  console.log("📦 Checking orders page for order sync...");
+
+  if (!currentTask?.orderNumber) {
+    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+      errorMessage: "No orderNumber available for order sync"
+    });
+    return;
+  }
+
+  if (attempt > 12) {
+    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+      errorMessage: "Could not search orders page for order sync"
+    });
+    return;
+  }
+
+  const searchInput = findVerifySearchInput();
+
+  if (!searchInput) {
+    console.log("📦 Orders search input not found yet, retrying...");
+    setTimeout(() => handleOrderSyncOrdersPage(attempt + 1), 1000);
+    return;
+  }
+
+  const currentValue = normalizeText(searchInput.value || "");
+  const targetOrderNumber = normalizeText(currentTask.orderNumber);
+
+  if (currentValue !== targetOrderNumber) {
+    setInputValue(searchInput, currentTask.orderNumber);
+
+    setTimeout(() => {
+      handleOrderSyncOrdersPage(attempt + 1);
+    }, 2000);
+    return;
+  }
+
+  const matchingRow = findMatchingOrderRowByOrderNumber(currentTask.orderNumber);
+
+  if (!matchingRow) {
+    if (attempt < 12) {
+      console.log("📦 Matching order row not found yet, retrying...");
+      setTimeout(() => {
+        handleOrderSyncOrdersPage(attempt + 1);
+      }, 1000);
+      return;
+    }
+
+    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+      errorMessage: `Could not find order row for ${currentTask.orderNumber}`
+    });
+    return;
+  }
+
+  console.log("📦 Matching order row found, opening detail page");
+  clickOrderRowForDetail(matchingRow);
+
+  setTimeout(async () => {
+    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      if (await stopIfNeeded("after order sync detail navigation")) return;
+      handleOrderSyncDetailPage();
+      return;
+    }
+
+    console.log("📦 Order detail navigation not visible yet, waiting for page load...");
+  }, 1000);
+}
+
 async function handleVerifyOrderDetailPage(attempt = 0) {
   console.log("🔍 Checking order detail page...");
 
@@ -636,6 +863,61 @@ async function handleVerifyOrderDetailPage(attempt = 0) {
   reportTaskResult("ORDER_DETECTED_FROM_ACCEPTED_BID", {
     orderNumber: pendingMeta.orderNumber,
     finalStockXPrice
+  });
+}
+
+async function handleOrderSyncDetailPage(attempt = 0) {
+  console.log("📦 Checking order detail page for status sync...");
+
+  if (!currentTask?.orderNumber) {
+    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+      errorMessage: "No orderNumber available on order detail page"
+    });
+    return;
+  }
+
+  if (attempt > 12) {
+    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+      errorMessage: "Could not extract order status from detail page"
+    });
+    return;
+  }
+
+  const rawPageText = document.body?.innerText || "";
+  const pageText = normalizeText(rawPageText);
+
+  if (!pageText.includes("summary")) {
+    console.log("📦 Order detail page not ready yet, retrying...");
+    setTimeout(() => {
+      handleOrderSyncDetailPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  const stockxOrderStatus = extractOrderStatusFromDetailPageText(rawPageText);
+  const stockxTrackingUrl = findTrackOrderHref();
+  const stockxTrackingNumber = extractTrackingNumberFromUrl(stockxTrackingUrl);
+
+  if (!stockxOrderStatus) {
+    console.log("📦 Could not parse order status yet, retrying...");
+    setTimeout(() => {
+      handleOrderSyncDetailPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  console.log("✅ Order status synced", {
+    orderNumber: currentTask.orderNumber,
+    stockxOrderStatus,
+    stockxTrackingUrl,
+    stockxTrackingNumber
+  });
+
+  reportTaskResult("ORDER_STATUS_SYNCED", {
+    orderNumber: currentTask.orderNumber,
+    stockxOrderStatus,
+    stockxTrackingUrl,
+    stockxTrackingNumber
   });
 }
 
@@ -1431,7 +1713,10 @@ function reportTaskResult(action, extra = {}) {
     return;
   }
 
-  const submittedBid = Number(formatBidValue(currentTask.maxBid));
+  const submittedBid =
+    currentTask?.maxBid !== undefined && currentTask?.maxBid !== null
+      ? Number(formatBidValue(currentTask.maxBid))
+      : null;
 
   const payload = {
     recordId: currentTask.recordId,
