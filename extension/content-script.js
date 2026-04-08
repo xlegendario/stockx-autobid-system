@@ -27,6 +27,26 @@ window.addEventListener("load", async () => {
     return;
   }
 
+  const pendingInstant = await getPendingInstantOrderMeta();
+
+  if (pendingInstant?.orderNumber) {
+    if (window.location.pathname.includes("/buying/orders")) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("instant order orders page")) return;
+        handleInstantOrderOrdersPage();
+      }, 1500);
+      return;
+    }
+
+    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("instant order detail page")) return;
+        handleInstantOrderDetailPage();
+      }, 1500);
+      return;
+    }
+  }
+
   if (currentTask?.type === "VERIFY_BID_STATUS") {
     if (window.location.pathname.includes("/buying/bids")) {
       setTimeout(async () => {
@@ -194,6 +214,15 @@ async function getPendingVerifyOrderMeta() {
 
 async function clearPendingVerifyOrderMeta() {
   await chrome.storage.local.remove(["pendingVerifyOrderMeta"]);
+}
+
+async function getPendingInstantOrderMeta() {
+  const data = await chrome.storage.local.get(["pendingInstantOrderMeta"]);
+  return data.pendingInstantOrderMeta || null;
+}
+
+async function clearPendingInstantOrderMeta() {
+  await chrome.storage.local.remove(["pendingInstantOrderMeta"]);
 }
 
 function parseMoneyValue(raw) {
@@ -946,6 +975,110 @@ async function handleOrderSyncDetailPage(attempt = 0) {
     stockxOrderStatus,
     stockxTrackingUrl,
     stockxTrackingNumber
+  });
+}
+
+async function handleInstantOrderOrdersPage(attempt = 0) {
+  console.log("🔥 Handling instant order - orders page");
+
+  const meta = await getPendingInstantOrderMeta();
+
+  if (!meta?.orderNumber) {
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Missing instant order meta"
+    });
+    return;
+  }
+
+  if (attempt > 12) {
+    await clearPendingInstantOrderMeta();
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Could not find instant order in orders page"
+    });
+    return;
+  }
+
+  const searchInput = findVerifySearchInput();
+
+  if (!searchInput) {
+    setTimeout(() => handleInstantOrderOrdersPage(attempt + 1), 1000);
+    return;
+  }
+
+  const currentValue = normalizeText(searchInput.value || "");
+  const target = normalizeText(meta.orderNumber);
+
+  if (currentValue !== target) {
+    setInputValue(searchInput, meta.orderNumber);
+
+    setTimeout(() => {
+      handleInstantOrderOrdersPage(attempt + 1);
+    }, 2000);
+    return;
+  }
+
+  const row = findMatchingOrderRowByOrderNumber(meta.orderNumber);
+
+  if (!row) {
+    setTimeout(() => {
+      handleInstantOrderOrdersPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  console.log("🔥 Instant order row found, opening detail page");
+  clickOrderRowForDetail(row);
+}
+
+async function handleInstantOrderDetailPage(attempt = 0) {
+  console.log("🔥 Handling instant order - detail page");
+
+  const meta = await getPendingInstantOrderMeta();
+
+  if (!meta?.orderNumber) {
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Missing instant order meta on detail page"
+    });
+    return;
+  }
+
+  if (attempt > 12) {
+    await clearPendingInstantOrderMeta();
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Could not extract price for instant order"
+    });
+    return;
+  }
+
+  const rawText = document.body?.innerText || "";
+  const pageText = normalizeText(rawText);
+
+  if (!pageText.includes("summary") || !pageText.includes("total")) {
+    setTimeout(() => {
+      handleInstantOrderDetailPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  const finalStockXPrice = extractFinalStockXPriceFromText(rawText);
+
+  if (!Number.isFinite(finalStockXPrice)) {
+    setTimeout(() => {
+      handleInstantOrderDetailPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+
+  console.log("✅ Instant order complete:", {
+    orderNumber: meta.orderNumber,
+    finalStockXPrice
+  });
+
+  await clearPendingInstantOrderMeta();
+
+  reportTaskResult("ORDER_PLACED_WITH_DETAILS", {
+    orderNumber: meta.orderNumber,
+    finalStockXPrice
   });
 }
 
@@ -1772,7 +1905,7 @@ function reportTaskResult(action, extra = {}) {
   );
 }
 
-function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
+async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
   if (attempt > 20) {
     console.log("Final outcome not detected after multiple attempts");
 
@@ -1804,7 +1937,29 @@ function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     pageText.includes("congratulations! your order has been placed successfully")
   ) {
     console.log("✅ Order success page detected");
-    reportTaskResult("ORDER_PLACED");
+
+    const rawText = document.body?.innerText || "";
+    const orderNumber = extractOrderNumberFromText(rawText);
+
+    if (!orderNumber) {
+      console.log("❌ Could not extract order number from success page");
+
+      reportTaskResult("ORDER_PLACED_FALLBACK", {
+        errorMessage: "Success page but no order number found"
+      });
+      return;
+    }
+
+    console.log("📦 Extracted order number from success page:", orderNumber);
+
+    await chrome.storage.local.set({
+      pendingInstantOrderMeta: {
+        orderNumber,
+        recordId: currentTask.recordId
+      }
+    });
+
+    window.location.href = "https://stockx.com/buying/orders";
     return;
   }
 
