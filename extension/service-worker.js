@@ -18,7 +18,8 @@ async function clearCurrentTaskState() {
   resetInProgressState();
 
   await chrome.storage.local.set({
-    currentTask: null
+    currentTask: null,
+    currentTaskStartedAt: null
   });
 }
 
@@ -73,6 +74,16 @@ async function scheduleNextRun(delayMs) {
   await chrome.alarms.create(RUNNER_ALARM_NAME, {
     delayInMinutes: delayMinutes
   });
+}
+
+async function continueRunnerAfterTaskCompletion() {
+  if (!isRunnerEnabled) return;
+
+  // duurzame fallback als de worker toch gesuspend wordt
+  await scheduleNextRun(500);
+
+  // probeer meteen door te pakken
+  await runLoop();
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -131,24 +142,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(async (result) => {
         await clearCurrentTaskState();
 
-        sendResponse({ ok: true, result });
-
         if (isRunnerEnabled) {
-          runLoop().catch((err) => {
+          try {
+            await continueRunnerAfterTaskCompletion();
+          } catch (err) {
             console.error("Runner loop error after success:", err);
-            resetInProgressState();
+            await clearCurrentTaskState();
 
             if (isRunnerEnabled) {
-              scheduleNextRun(ERROR_RETRY_DELAY_MS);
+              await scheduleNextRun(ERROR_RETRY_DELAY_MS);
             }
-          });
+          }
         }
+
+        sendResponse({ ok: true, result });
       })
       .catch(async (err) => {
         await clearCurrentTaskState();
 
         if (isRunnerEnabled) {
-          scheduleNextRun(ERROR_RETRY_DELAY_MS);
+          await scheduleNextRun(ERROR_RETRY_DELAY_MS);
         }
 
         sendResponse({ ok: false, error: err.message });
@@ -167,7 +180,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     await clearCurrentTaskState();
 
     if (isRunnerEnabled) {
-      scheduleNextRun(ERROR_RETRY_DELAY_MS);
+      await scheduleNextRun(ERROR_RETRY_DELAY_MS);
     }
   });
 });
@@ -177,6 +190,15 @@ async function startRunner() {
   await saveState(false);
 
   await scheduleNextRun(500);
+
+  runLoop().catch(async (err) => {
+    console.error("Runner loop error after start:", err);
+    await clearCurrentTaskState();
+
+    if (isRunnerEnabled) {
+      await scheduleNextRun(ERROR_RETRY_DELAY_MS);
+    }
+  });
 
   return {
     ok: true,
@@ -397,6 +419,16 @@ function buildStockXUrl(task) {
 loadState().then(() => {
   if (isRunnerEnabled) {
     console.log("🔄 Restoring runner loop after reload");
+
     scheduleNextRun(1000);
+
+    runLoop().catch(async (err) => {
+      console.error("Runner loop error after restore:", err);
+      await clearCurrentTaskState();
+
+      if (isRunnerEnabled) {
+        await scheduleNextRun(ERROR_RETRY_DELAY_MS);
+      }
+    });
   }
 });
