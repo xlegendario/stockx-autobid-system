@@ -157,5 +157,22 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  if (payload.action === "ORDER_STATUS_SYNCED") {
+    return await updateOrder(recordId, {
+      "StockX Order Status": payload.stockxOrderStatus || "",
+      "StockX Tracking URL": payload.stockxTrackingUrl || "",
+      "StockX Tracking Number": payload.stockxTrackingNumber || "",
+      LastOrderSyncAt: now,
+      ErrorMessage: ""
+    });
+  }
+
+  if (payload.action === "ORDER_STATUS_SYNC_FAILED") {
+    return await updateOrder(recordId, {
+      LastOrderSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Order status sync failed"
+    });
+  }
+
   throw new Error("Unknown task result type/action");
 }
