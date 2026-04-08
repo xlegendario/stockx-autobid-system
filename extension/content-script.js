@@ -554,27 +554,55 @@ function extractOrderStatusFromDetailPageText(text) {
 
   if (lines.length === 0) return null;
 
-  const ignored = new Set([
+  // 1. probeer expliciet bekende status keywords
+  const statusKeywords = [
+    "order confirmed",
+    "order received",
+    "awaiting stockx verification",
+    "order on its way to stockx",
+    "verified",
+    "shipped",
+    "delivered"
+  ];
+
+  const match = lines.find((line) => {
+    const normalized = normalizeText(line);
+    return statusKeywords.some((keyword) =>
+      normalized.includes(keyword)
+    );
+  });
+
+  if (match) return match;
+
+  // 2. fallback: zoek rond "status"
+  for (let i = 0; i < lines.length; i++) {
+    const normalized = normalizeText(lines[i]);
+
+    if (normalized === "status" || normalized.includes("order status")) {
+      const next = lines[i + 1];
+      if (next) return next;
+    }
+  }
+
+  // 3. fallback: laatste redelijke regel (maar skip accessibility crap)
+  const ignored = [
+    "skip to main content",
     "back",
     "track order",
     "summary",
     "shipping",
-    "total",
-    "order details"
-  ]);
+    "total"
+  ];
 
-  const candidate = lines.find((line) => {
+  const fallback = lines.find((line) => {
     const normalized = normalizeText(line);
     if (!normalized) return false;
-    if (ignored.has(normalized)) return false;
-    if (normalized.startsWith("order number")) return false;
-    if (/^\d{2}-[a-z0-9-]{6,}$/i.test(line)) return false;
-    return true;
+
+    return !ignored.includes(normalized);
   });
 
-  return candidate || null;
+  return fallback || null;
 }
-
 function findTrackOrderHref() {
   const candidates = Array.from(
     document.querySelectorAll("a, button, [role='button']")
