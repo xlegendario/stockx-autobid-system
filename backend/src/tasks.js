@@ -243,10 +243,12 @@ export async function buildTask(
       }
     }
   
-    if (!shouldPlaceOrUpdate(f) && !needsRemoval(f)) return false;
+    const canPlaceOrUpdate = needsBid(f) && shouldPlaceOrUpdate(f);
+
+    if (!canPlaceOrUpdate && !needsRemoval(f)) return false;
   
     // Block alleen echte nieuwe placements
-    if (shouldPlaceOrUpdate(f) && !hasBidPlaced(f)) {
+    if (canPlaceOrUpdate && !hasBidPlaced(f)) {
       const key = getBlockingKey(f);
       if (activeBidKeys.has(key)) return false;
     }
@@ -280,7 +282,10 @@ export async function buildTask(
       continue;
     }
     
-    const firstPlace = group.find((record) => shouldPlaceOrUpdate(record.fields));
+    const firstPlace = group.find((record) => {
+      const f = record.fields;
+      return needsBid(f) && shouldPlaceOrUpdate(f);
+    });
     if (firstPlace) {
       placeCandidates.push(firstPlace);
     }
