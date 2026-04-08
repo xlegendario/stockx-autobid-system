@@ -5,6 +5,7 @@ let isTaskInProgress = false;
 
 const LOOP_DELAY_MS = 8000;
 const ERROR_RETRY_DELAY_MS = 15000;
+const ORDER_PLACED_NEXT_TASK_DELAY_MS = 8000;
 const TASK_TIMEOUT_MS = 120000; // 2 minuten
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
 let currentTaskStartedAt = null;
@@ -86,6 +87,10 @@ async function continueRunnerAfterTaskCompletion() {
   await runLoop();
 }
 
+function isImmediateOrderPlacementAction(action) {
+  return action === "ORDER_PLACED" || action === "ORDER_PLACED_FALLBACK";
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "FETCH_NEXT_TASK") {
     handleSingleTask()
@@ -144,7 +149,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (isRunnerEnabled) {
           try {
-            await continueRunnerAfterTaskCompletion();
+            if (isImmediateOrderPlacementAction(message.payload?.action)) {
+              await scheduleNextRun(ORDER_PLACED_NEXT_TASK_DELAY_MS);
+            } else {
+              await continueRunnerAfterTaskCompletion();
+            }
           } catch (err) {
             console.error("Runner loop error after success:", err);
             await clearCurrentTaskState();
