@@ -1958,7 +1958,11 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
         recordId: currentTask.recordId
       }
     });
-
+    
+    // 🔥 STOP huidige task zodat er GEEN nieuwe run start
+    currentTask = null;
+    await chrome.storage.local.remove("currentTask");
+    
     window.location.href = "https://stockx.com/buying/orders";
     return;
   }
