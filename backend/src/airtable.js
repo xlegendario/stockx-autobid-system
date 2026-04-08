@@ -55,6 +55,10 @@ export async function fetchActiveBids() {
   return await fetchViewRecords(ACTIVE_BIDS_VIEW_NAME);
 }
 
+export async function fetchOrdersPlaced() {
+  return await fetchViewRecords(ORDERS_PLACED_VIEW_NAME);
+}
+
 function escapeAirtableFormulaValue(value) {
   return String(value || "").replace(/'/g, "\\'");
 }
