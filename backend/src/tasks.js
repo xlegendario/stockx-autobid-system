@@ -127,6 +127,28 @@ function shouldPlaceOrUpdate(fields) {
   return target > current;
 }
 
+function needsOrderSync(fields) {
+  return Number(fields["Needs StockX Order Sync"]) === 1;
+}
+
+function getStockxOrderNumber(fields) {
+  const raw = fields["StockX Order Number"];
+  if (raw === undefined || raw === null) return null;
+
+  const value = String(normalizeLookup(raw) || "").trim();
+  return value || null;
+}
+
+function getLastOrderSyncTimestamp(fields) {
+  const raw = fields["LastOrderSyncAt"];
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return parsed.getTime();
+}
+
 function getAccountGroupKey(fields) {
   const raw = normalizeLookup(fields["Merchant StockX Account Group Key"]);
 
@@ -186,7 +208,13 @@ function getBlockingKey(fields) {
   return `${accountGroup}|${sku}|${size}`;
 }
 
-export async function buildTask(records, runnerName, activeBidRecords = [], requestedAccountGroupKey = null) {
+export async function buildTask(
+  records,
+  runnerName,
+  activeBidRecords = [],
+  requestedAccountGroupKey = null,
+  orderSyncRecords = []
+) {
   const normalizedRequestedRunner = normalizeRunner(runnerName);
   const activeBidKeys = new Set(
     activeBidRecords
@@ -241,6 +269,7 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
   const placeCandidates = [];
   const removeCandidates = [];
   const verifyCandidates = [];
+  const orderSyncCandidates = [];
 
   for (const key of Object.keys(groups)) {
     const group = groups[key];
@@ -280,7 +309,34 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
   
     verifyCandidates.push(record);
   }
-
+  
+  for (const record of orderSyncRecords) {
+    const f = record.fields;
+  
+    if (!isAutobidEnabled(f)) continue;
+  
+    const runner = getRunner(f);
+    const accountGroup = getAccountGroupKey(f);
+    const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
+  
+    if (accountMode === "MAIN_ACCOUNT") {
+      if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
+        continue;
+      }
+    } else {
+      if (runner !== normalizedRequestedRunner) {
+        continue;
+      }
+    }
+  
+    if (!needsOrderSync(f)) continue;
+  
+    const orderNumber = getStockxOrderNumber(f);
+    if (!orderNumber) continue;
+  
+    orderSyncCandidates.push(record);
+  }
+  
   const chosenRemove =
     removeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
   
@@ -382,6 +438,36 @@ export async function buildTask(records, runnerName, activeBidRecords = [], requ
       recordId: chosenVerify.id,
       sku,
       size,
+      stockxUrl: fields["StockX URL"] || null
+    };
+  }
+
+  const chosenOrderSync =
+    orderSyncCandidates.sort((a, b) => {
+      const aLastSync = getLastOrderSyncTimestamp(a.fields);
+      const bLastSync = getLastOrderSyncTimestamp(b.fields);
+  
+      if (aLastSync === null && bLastSync === null) {
+        return new Date(a.createdTime) - new Date(b.createdTime);
+      }
+  
+      if (aLastSync === null) return -1;
+      if (bLastSync === null) return 1;
+  
+      if (aLastSync !== bLastSync) {
+        return aLastSync - bLastSync;
+      }
+  
+      return new Date(a.createdTime) - new Date(b.createdTime);
+    })[0];
+  
+  if (chosenOrderSync) {
+    const fields = chosenOrderSync.fields;
+  
+    return {
+      type: "SYNC_ORDER_STATUS",
+      recordId: chosenOrderSync.id,
+      orderNumber: getStockxOrderNumber(fields),
       stockxUrl: fields["StockX URL"] || null
     };
   }
