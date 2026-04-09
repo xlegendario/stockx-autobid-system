@@ -76,6 +76,14 @@ function needsBid(fields) {
   return Number(fields["Needs StockX Bid"]) === 1;
 }
 
+function needsBidUpdate(fields) {
+  return Number(fields["Needs StockX Bid Update"]) === 1;
+}
+
+function needsPlaceOrUpdate(fields) {
+  return needsBid(fields) || needsBidUpdate(fields);
+}
+
 function needsRemoval(fields) {
   return Number(fields["Needs StockX Removal"]) === 1 && hasBidPlaced(fields);
 }
@@ -243,7 +251,7 @@ export async function buildTask(
       }
     }
   
-    const canPlaceOrUpdate = needsBid(f) && shouldPlaceOrUpdate(f);
+    const canPlaceOrUpdate = needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
 
     if (!canPlaceOrUpdate && !needsRemoval(f)) return false;
   
@@ -284,7 +292,7 @@ export async function buildTask(
     
     const firstPlace = group.find((record) => {
       const f = record.fields;
-      return needsBid(f) && shouldPlaceOrUpdate(f);
+      return needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
     });
     if (firstPlace) {
       placeCandidates.push(firstPlace);
