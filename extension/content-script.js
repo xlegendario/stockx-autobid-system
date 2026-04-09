@@ -779,19 +779,19 @@ async function handleVerifyOrdersPage(attempt = 0) {
   });
   
   clickOrderRowForDetail(matchingRow);
-  
+
   setTimeout(async () => {
     if (/^\/buying\/\d+/.test(window.location.pathname)) {
-      console.log("✅ Navigated to order detail page");
-  
+      console.log("✅ Verify navigated to order detail page");
+
       if (await stopIfNeeded("after order detail navigation")) return;
-  
+
       handleVerifyOrderDetailPage();
       return;
     }
-  
-    console.log("🔍 Order detail navigation not visible yet, waiting for page load...");
-  }, 1000);
+
+    console.log("🔍 Verify detail navigation not visible yet, waiting...");
+  }, 1500);
 }
 
 async function handleOrderSyncOrdersPage(attempt = 0) {
@@ -853,13 +853,16 @@ async function handleOrderSyncOrdersPage(attempt = 0) {
 
   setTimeout(async () => {
     if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      console.log("✅ Order sync navigated to detail page");
+
       if (await stopIfNeeded("after order sync detail navigation")) return;
+
       handleOrderSyncDetailPage();
       return;
     }
 
-    console.log("📦 Order detail navigation not visible yet, waiting for page load...");
-  }, 1000);
+    console.log("📦 Order sync detail navigation not visible yet, waiting...");
+  }, 1500);
 }
 
 async function handleVerifyOrderDetailPage(attempt = 0) {
@@ -1028,6 +1031,20 @@ async function handleInstantOrderOrdersPage(attempt = 0) {
 
   console.log("🔥 Instant order row found, opening detail page");
   clickOrderRowForDetail(row);
+
+  setTimeout(async () => {
+    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+      console.log("✅ Instant order navigated to detail page");
+
+      if (await stopIfNeeded("after instant order detail navigation")) return;
+
+      handleInstantOrderDetailPage();
+      return;
+    }
+
+    console.log("🔥 Instant order detail navigation not visible yet, waiting...");
+  }, 1200);
+
   return;
 }
 
