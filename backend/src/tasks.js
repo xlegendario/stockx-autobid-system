@@ -8,7 +8,7 @@ function isVerifyCandidate(fields) {
   );
 }
 
-function isReadyForVerify(fields, cooldownMinutes = 10) {
+function isReadyForVerify(fields, cooldownMinutes = 30) {
   if (!isVerifyCandidate(fields)) return false;
 
   const raw = fields["LastSyncAt"];
