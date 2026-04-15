@@ -663,11 +663,14 @@ function extractTrackingNumberFromUrl(url) {
   try {
     const parsed = new URL(url, window.location.origin);
 
+    // 1. eerst bekende query params
     const directParams = [
       "parcelNumber",
       "trackingNumber",
       "tracking_number",
-      "tracking"
+      "tracking",
+      "awb",   // DHL
+      "AWB"    // voor de zekerheid
     ];
 
     for (const key of directParams) {
@@ -677,11 +680,24 @@ function extractTrackingNumberFromUrl(url) {
 
     const fullUrl = parsed.toString();
 
-    const queryMatch =
-      fullUrl.match(/[?&](?:parcelNumber|trackingNumber|tracking_number|tracking)=([^&]+)/i);
+    // 2. DHL AWB uit querystring
+    const dhlAwbMatch = fullUrl.match(/[?&]AWB=([A-Z0-9]+)/i);
+    if (dhlAwbMatch?.[1]) {
+      return decodeURIComponent(dhlAwbMatch[1]).trim();
+    }
 
-    if (queryMatch?.[1]) {
-      return decodeURIComponent(queryMatch[1]).trim();
+    // 3. DPD / algemene tracking params fallback
+    const genericQueryMatch = fullUrl.match(
+      /[?&](?:parcelNumber|trackingNumber|tracking_number|tracking)=([^&]+)/i
+    );
+    if (genericQueryMatch?.[1]) {
+      return decodeURIComponent(genericQueryMatch[1]).trim();
+    }
+
+    // 4. UPS fallback: 1Z + 16 chars = totaal 18 chars
+    const upsMatch = fullUrl.match(/\b1Z[0-9A-Z]{16}\b/i);
+    if (upsMatch?.[0]) {
+      return upsMatch[0].trim();
     }
 
     return null;
@@ -689,7 +705,6 @@ function extractTrackingNumberFromUrl(url) {
     return null;
   }
 }
-
 async function handleVerifyOrdersPage(attempt = 0) {
   console.log("🔍 Checking orders page...");
 
