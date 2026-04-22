@@ -1138,6 +1138,154 @@ function getExpectedEuSizeText(size) {
   return `eu ${normalized}`;
 }
 
+function findScrollableDropdownContainer() {
+  const candidates = Array.from(
+    document.querySelectorAll("div, ul, section, [role='listbox']")
+  ).filter((el) => {
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    const canScroll = el.scrollHeight > el.clientHeight + 20;
+    if (!canScroll) return false;
+
+    const text = normalizeText(el.innerText || "");
+    return text.includes("eu") || text.includes("size");
+  });
+
+  if (candidates.length === 0) return null;
+
+  return candidates.sort((a, b) => {
+    const aScore = a.scrollHeight - a.clientHeight;
+    const bScore = b.scrollHeight - b.clientHeight;
+    return bScore - aScore;
+  })[0];
+}
+
+function findSizeOption(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+
+  const candidates = Array.from(
+    document.querySelectorAll("button, [role='option'], li, div, span")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    if (text.includes("size:")) return false;
+
+    return (
+      text === normalizedTarget ||
+      text === `eu ${normalizedTarget}` ||
+      text.includes(`eu ${normalizedTarget}`)
+    );
+  });
+
+  if (candidates.length === 0) return null;
+
+  return candidates.sort(
+    (a, b) => normalizeText(a.innerText).length - normalizeText(b.innerText).length
+  )[0];
+}
+
+function selectSizeFromScrollableDropdown(
+  targetSize,
+  onSuccess,
+  context = "SIZE",
+  attempt = 0,
+  lastScrollTop = -1
+) {
+  const normalizedTarget = normalizeText(targetSize);
+  console.log(`👟 Trying to select size from dropdown for ${context}:`, normalizedTarget);
+
+  const match = findSizeOption(targetSize);
+
+  if (match) {
+    console.log(`👟 Clicking size option for ${context}:`, match.innerText);
+    clickElement(match);
+
+    setTimeout(() => {
+      onSuccess();
+    }, 1500);
+    return;
+  }
+
+  const scrollContainer = findScrollableDropdownContainer();
+
+  if (!scrollContainer) {
+    if (attempt > 20) {
+      if (context === "REMOVE") {
+        reportTaskResult("BID_REMOVE_FAILED", {
+          errorMessage: `Size ${targetSize} not found and no scrollable dropdown detected`
+        });
+      } else if (context === "REMOVE_VERIFY") {
+        reportTaskResult("BID_REMOVE_FAILED", {
+          errorMessage: `Size ${targetSize} not found during remove verification`
+        });
+      } else {
+        reportTaskResult("BID_UPDATE_FAILED", {
+          errorMessage: `Size ${targetSize} not found and no scrollable dropdown detected`
+        });
+      }
+      return;
+    }
+
+    console.log(`${context}: no scrollable dropdown found yet, retrying...`);
+    setTimeout(() => {
+      selectSizeFromScrollableDropdown(targetSize, onSuccess, context, attempt + 1, lastScrollTop);
+    }, 1000);
+    return;
+  }
+
+  const currentScrollTop = scrollContainer.scrollTop;
+  const maxScrollTop = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+
+  if (attempt === 0 && currentScrollTop !== 0) {
+    scrollContainer.scrollTop = 0;
+  }
+
+  const nextScrollTop = Math.min(currentScrollTop + 220, maxScrollTop);
+  scrollContainer.scrollTop = nextScrollTop;
+
+  console.log(`👟 ${context}: scrolled dropdown`, {
+    currentScrollTop,
+    nextScrollTop,
+    maxScrollTop
+  });
+
+  const reachedEnd =
+    nextScrollTop >= maxScrollTop ||
+    nextScrollTop === currentScrollTop ||
+    nextScrollTop === lastScrollTop;
+
+  if (reachedEnd && attempt > 25) {
+    if (context === "REMOVE") {
+      reportTaskResult("BID_REMOVE_FAILED", {
+        errorMessage: `Size ${targetSize} not found after scrolling full dropdown`
+      });
+    } else if (context === "REMOVE_VERIFY") {
+      reportTaskResult("BID_REMOVE_FAILED", {
+        errorMessage: `Size ${targetSize} not found after full dropdown scroll during remove verification`
+      });
+    } else {
+      reportTaskResult("BID_UPDATE_FAILED", {
+        errorMessage: `Size ${targetSize} not found after scrolling full dropdown`
+      });
+    }
+    return;
+  }
+
+  setTimeout(() => {
+    selectSizeFromScrollableDropdown(targetSize, onSuccess, context, attempt + 1, currentScrollTop);
+  }, 700);
+}
+
 function openSizeDropdownAndSelect(targetSize) {
   console.log("Trying to open size dropdown for:", targetSize);
 
@@ -1180,36 +1328,13 @@ function openSizeDropdownAndSelect(targetSize) {
 }
 
 function selectSizeFromDropdown(targetSize) {
-  const normalizedTarget = normalizeText(targetSize);
-  console.log("Trying to select size from dropdown:", normalizedTarget);
-
-  const allButtons = Array.from(document.querySelectorAll("button"));
-  const allDivs = Array.from(document.querySelectorAll("div"));
-  const allSpans = Array.from(document.querySelectorAll("span"));
-
-  const candidates = [...allButtons, ...allDivs, ...allSpans];
-
-  const match = candidates.find((el) => {
-    const text = normalizeText(el.innerText);
-    return (
-      text === normalizedTarget ||
-      text === `eu ${normalizedTarget}` ||
-      text.includes(`eu ${normalizedTarget}`)
-    );
-  });
-
-  if (!match) {
-    console.log("Size option not found yet, retrying...");
-    setTimeout(() => selectSizeFromDropdown(targetSize), 1000);
-    return;
-  }
-
-  console.log("Clicking size option:", match.innerText);
-  match.click();
-
-  setTimeout(() => {
-    goToOfferPage(targetSize);
-  }, 1200);
+  selectSizeFromScrollableDropdown(
+    targetSize,
+    () => {
+      goToOfferPage(targetSize);
+    },
+    "PLACE_OR_UPDATE"
+  );
 }
 
 function openSizeDropdownAndSelectForRemove(targetSize) {
@@ -1237,43 +1362,13 @@ function openSizeDropdownAndSelectForRemove(targetSize) {
 }
 
 function selectSizeFromDropdownForRemove(targetSize) {
-  const normalizedTarget = normalizeText(targetSize);
-  console.log("🧹 Trying to select size from dropdown for REMOVE:", normalizedTarget);
-
-  const candidates = Array.from(
-    document.querySelectorAll("button, [role='option'], li, div, span")
-  ).filter((el) => {
-    const text = normalizeText(el.innerText);
-    const rect = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
-
-    if (!text) return false;
-    if (style.visibility === "hidden" || style.display === "none") return false;
-    if (rect.width <= 0 || rect.height <= 0) return false;
-
-    // voorkom dat we de dropdown control zelf pakken
-    if (text.includes("size:")) return false;
-
-    return text === normalizedTarget || text === `eu ${normalizedTarget}`;
-  });
-
-  if (candidates.length === 0) {
-    console.log("REMOVE: size option not found yet, retrying...");
-    setTimeout(() => selectSizeFromDropdownForRemove(targetSize), 1000);
-    return;
-  }
-
-  // pak de kortste match, meestal de echte optie
-  const match = candidates.sort(
-    (a, b) => normalizeText(a.innerText).length - normalizeText(b.innerText).length
-  )[0];
-
-  console.log("🧹 Clicking size option for REMOVE:", match.innerText);
-  clickElement(match);
-
-  setTimeout(() => {
-    clickUpdateButtonForRemove();
-  }, 2500);
+  selectSizeFromScrollableDropdown(
+    targetSize,
+    () => {
+      clickUpdateButtonForRemove();
+    },
+    "REMOVE"
+  );
 }
 
 function clickUpdateButtonForRemove(attempt = 0) {
@@ -1486,36 +1581,13 @@ function openSizeDropdownAndSelectForRemoveVerification(targetSize) {
 }
 
 function selectSizeFromDropdownForRemoveVerification(targetSize) {
-  const normalizedTarget = normalizeText(targetSize);
-  console.log("🧹 Selecting size for REMOVE verification:", normalizedTarget);
-
-  const allButtons = Array.from(document.querySelectorAll("button"));
-  const allDivs = Array.from(document.querySelectorAll("div"));
-  const allSpans = Array.from(document.querySelectorAll("span"));
-
-  const candidates = [...allButtons, ...allDivs, ...allSpans];
-
-  const match = candidates.find((el) => {
-    const text = normalizeText(el.innerText);
-    return (
-      text === normalizedTarget ||
-      text === `eu ${normalizedTarget}` ||
-      text.includes(`eu ${normalizedTarget}`)
-    );
-  });
-
-  if (!match) {
-    console.log("REMOVE VERIFY: size option not found yet, retrying...");
-    setTimeout(() => selectSizeFromDropdownForRemoveVerification(targetSize), 1000);
-    return;
-  }
-
-  console.log("🧹 Clicking size option for REMOVE verification:", match.innerText);
-  match.click();
-
-  setTimeout(() => {
-    checkIfBidRemovedForSelectedSize();
-  }, 1500);
+  selectSizeFromScrollableDropdown(
+    targetSize,
+    () => {
+      checkIfBidRemovedForSelectedSize();
+    },
+    "REMOVE_VERIFY"
+  );
 }
 
 function checkIfBidRemovedForSelectedSize(attempt = 0) {
