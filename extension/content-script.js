@@ -1675,33 +1675,65 @@ function handleBuyPage(attempt = 0) {
   }
 
   console.log("📍 On BUY page, selecting size again...");
+  openBuyPageSizeAndContinue(currentTask.size);
+}
 
-  const targetSize = normalizeText(currentTask.size);
+function openBuyPageSizeAndContinue(targetSize, attempt = 0) {
+  console.log("🔥 Opening BUY page size picker for:", targetSize);
 
-  const candidates = Array.from(
-    document.querySelectorAll("button, [role='button'], li, span, p, div")
-  ).filter((el) => {
-    const text = normalizeText(el.innerText);
-    if (!text) return false;
-    if (text.length > 20) return false;
+  const buttons = Array.from(document.querySelectorAll("button, [role='button']"));
 
-    return text === `eu ${targetSize}` || text === targetSize;
+  const dropdownButton = buttons.find((btn) => {
+    const text = normalizeText(btn.innerText);
+    return text.includes("eu ") || text === "size:" || text.includes("size");
   });
 
-  if (candidates.length === 0) {
-    console.log("Buy page size not found yet, retrying...");
-    setTimeout(() => handleBuyPage(attempt + 1), 800);
+  if (!dropdownButton) {
+    if (attempt > 20) {
+      reportTaskResult("BID_UPDATE_FAILED", {
+        errorMessage: `BUY page size dropdown not found for size ${targetSize}`
+      });
+      return;
+    }
+
+    console.log("BUY page size dropdown not found yet, retrying...");
+    setTimeout(() => {
+      openBuyPageSizeAndContinue(targetSize, attempt + 1);
+    }, 1000);
     return;
   }
 
-  const match = candidates[0];
+  const currentText = normalizeText(dropdownButton.innerText);
+  const normalizedTarget = normalizeText(targetSize);
 
-  console.log("🔥 Clicking BUY page size:", match.innerText);
-  match.click();
+  if (
+    currentText === normalizedTarget ||
+    currentText === `eu ${normalizedTarget}` ||
+    currentText.includes(`eu ${normalizedTarget}`)
+  ) {
+    console.log("BUY page size already selected:", dropdownButton.innerText);
+    setTimeout(() => {
+      fillBidPrice();
+    }, 1000);
+    return;
+  }
+
+  console.log("🔥 Clicking BUY page size dropdown:", dropdownButton.innerText);
+  dropdownButton.click();
 
   setTimeout(() => {
-    fillBidPrice();
-  }, 1500);
+    selectBuyPageSizeFromDropdown(targetSize);
+  }, 1000);
+}
+
+function selectBuyPageSizeFromDropdown(targetSize) {
+  selectSizeFromScrollableDropdown(
+    targetSize,
+    () => {
+      fillBidPrice();
+    },
+    "BUY_PAGE"
+  );
 }
 
 function findBidInput() {
