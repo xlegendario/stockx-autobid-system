@@ -1653,29 +1653,92 @@ function handleBuyPage(attempt = 0) {
     return;
   }
 
-  // Alleen direct naar price form als er OOK een Review Bid knop zichtbaar is
-  const priceInput = findBidInput();
-  const hasReviewActionButton = Array.from(document.querySelectorAll("button")).some((btn) => {
-    const text = (btn.innerText || "").trim().toLowerCase();
-    return text.includes("review bid") || text.includes("review order");
-  });
-  
-  if (priceInput && hasReviewActionButton) {
-    console.log("Bid input screen detected directly");
-    setTimeout(() => fillBidPrice(), 800);
-    return;
-  }
-
-  if (attempt > 20) {
-    console.log("BUY page size not found after multiple attempts");
+  if (attempt > 25) {
+    console.log("BUY page flow failed after multiple attempts");
     reportTaskResult("BID_UPDATE_FAILED", {
-      errorMessage: "BUY page size not found after multiple attempts"
+      errorMessage: `BUY page flow failed for size ${currentTask.size}`
     });
     return;
   }
 
-  console.log("📍 On BUY page, selecting size again...");
-  openBuyPageSizeAndContinue(currentTask.size);
+  const priceInput = findBidInput();
+  const hasReviewActionButton = Array.from(document.querySelectorAll("button")).some((btn) => {
+    const text = normalizeText(btn.innerText || "");
+    return text.includes("review bid") || text.includes("review order");
+  });
+
+  // MODE 1: already on pricing form
+  if (priceInput && hasReviewActionButton) {
+    console.log("📍 BUY page pricing form detected");
+    openBuyPageSizeAndContinue(currentTask.size);
+    return;
+  }
+
+  // MODE 2: initial size grid page
+  const clickedGridSize = clickBuyPageInitialSizeOption(currentTask.size);
+
+  if (clickedGridSize) {
+    console.log("✅ Clicked initial BUY page size tile, waiting for pricing form...");
+    setTimeout(() => {
+      handleBuyPage(attempt + 1);
+    }, 1500);
+    return;
+  }
+
+  console.log("BUY page initial size tile not found yet, retrying...");
+  setTimeout(() => {
+    handleBuyPage(attempt + 1);
+  }, 1000);
+}
+
+function clickBuyPageInitialSizeOption(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+
+  const candidates = Array.from(
+    document.querySelectorAll("button, [role='button'], li, div, span")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText || "");
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    // exclude obvious non-size controls
+    if (
+      text.includes("review bid") ||
+      text.includes("review order") ||
+      text.includes("buy now") ||
+      text.includes("better bid") ||
+      text.includes("good bid") ||
+      text.includes("cancel") ||
+      text.includes("edit") ||
+      text.includes("size:")
+    ) {
+      return false;
+    }
+
+    return (
+      text === normalizedTarget ||
+      text === `eu ${normalizedTarget}` ||
+      text.includes(`eu ${normalizedTarget}`)
+    );
+  });
+
+  if (candidates.length === 0) return false;
+
+  const match = candidates.sort((a, b) => {
+    const aText = normalizeText(a.innerText || "");
+    const bText = normalizeText(b.innerText || "");
+
+    // prefer shortest match like "eu 46 2/3"
+    return aText.length - bText.length;
+  })[0];
+
+  console.log("🔥 Clicking BUY page initial size tile:", match.innerText);
+  clickElement(match);
+  return true;
 }
 
 function openBuyPageSizeAndContinue(targetSize, attempt = 0) {
