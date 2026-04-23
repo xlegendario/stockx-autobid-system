@@ -8,6 +8,7 @@ const ERROR_RETRY_DELAY_MS = 15000;
 const ORDER_PLACED_NEXT_TASK_DELAY_MS = 8000;
 const TASK_TIMEOUT_MS = 120000; // 2 minuten
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
+
 let currentTaskStartedAt = null;
 
 function resetInProgressState() {
@@ -150,6 +151,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (isRunnerEnabled) {
           try {
             await continueRunnerAfterTaskCompletion();
+
             if (isImmediateOrderPlacementAction(message.payload?.action)) {
               await scheduleNextRun(ORDER_PLACED_NEXT_TASK_DELAY_MS);
             } else {
@@ -401,7 +403,7 @@ async function submitTaskResult(payload) {
 function buildStockXUrl(task) {
   // VERIFY flow → direct naar bids page
   if (task.type === "VERIFY_BID_STATUS") {
-  return "https://stockx.com/buying/bids";
+    return "https://stockx.com/buying/bids";
   }
 
   if (task.type === "SYNC_ORDER_STATUS") {
