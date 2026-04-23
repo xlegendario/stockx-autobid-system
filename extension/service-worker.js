@@ -42,22 +42,21 @@ async function loadState() {
   const data = await chrome.storage.local.get([
     "runnerEnabled",
     "forceStop",
-    "currentTaskStartedAt",
-    "currentTask"
+    "currentTaskStartedAt"
   ]);
 
-  // 🔥 only update if not already explicitly set
-  if (!isRunnerEnabled) {
-    isRunnerEnabled = data.runnerEnabled === true;
-  }
-
+  isRunnerEnabled = data.runnerEnabled === true;
   currentTaskStartedAt =
     typeof data.currentTaskStartedAt === "number"
       ? data.currentTaskStartedAt
       : null;
-
-  isTaskInProgress = !!data.currentTask;
 }
+
+chrome.storage.local.get(["currentTask"]).then((data) => {
+  if (data.currentTask) {
+    isTaskInProgress = true;
+  }
+});
 
 async function saveState(forceStop = false) {
   await chrome.storage.local.set({
@@ -69,11 +68,9 @@ async function saveState(forceStop = false) {
 async function scheduleNextRun(delayMs) {
   if (!isRunnerEnabled) return;
 
-  const delayMinutes = Math.max(delayMs / 60000, 0.1);
-
-  console.log("⏰ Scheduling next run in", delayMs, "ms");
-
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
+
+  const delayMinutes = Math.max(delayMs / 60000, 0.1);
 
   await chrome.alarms.create(RUNNER_ALARM_NAME, {
     delayInMinutes: delayMinutes
@@ -152,6 +149,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (isRunnerEnabled) {
           try {
+            await continueRunnerAfterTaskCompletion();
             if (isImmediateOrderPlacementAction(message.payload?.action)) {
               await scheduleNextRun(ORDER_PLACED_NEXT_TASK_DELAY_MS);
             } else {
@@ -185,8 +183,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== RUNNER_ALARM_NAME) return;
-
-  console.log("⏰ Alarm fired → running loop");
 
   runLoop().catch(async (err) => {
     console.error("Runner loop error:", err);
@@ -273,29 +269,18 @@ async function forceStopRunner() {
 }
 
 async function runLoop() {
-  console.log("🔄 runLoop triggered");
+  if (!isRunnerEnabled) return;
 
-  if (!isRunnerEnabled) {
-    console.log("⛔ Runner not enabled");
-    return;
-  }
-
-  await loadState(); // 🔥 REQUIRED
   await recoverIfTaskTimedOut();
 
-  if (isTaskInProgress) {
-    console.log("⏳ Task still in progress, retrying soon...");
-    await scheduleNextRun(2000); // 🔥 CRITICAL FIX
-    return;
-  }
+  if (isTaskInProgress) return;
 
   const result = await handleSingleTask();
 
   if (!isRunnerEnabled) return;
 
   if (!result.task) {
-    console.log("😴 No task, scheduling next loop");
-    await scheduleNextRun(LOOP_DELAY_MS);
+    scheduleNextRun(LOOP_DELAY_MS);
     return;
   }
 }
@@ -418,7 +403,7 @@ function buildStockXUrl(task) {
   if (task.type === "VERIFY_BID_STATUS") {
   return "https://stockx.com/buying/bids";
   }
-  
+
   if (task.type === "SYNC_ORDER_STATUS") {
     return "https://stockx.com/buying/orders";
   }
@@ -445,14 +430,19 @@ function buildStockXUrl(task) {
   return `https://stockx.com/search?s=${sku}`;
 }
 
-loadState().then(async () => {
-  console.log("🔄 Worker booted");
-
+loadState().then(() => {
   if (isRunnerEnabled) {
     console.log("🔄 Restoring runner loop after reload");
 
-    await scheduleNextRun(1000);
+    scheduleNextRun(1000);
 
-    await runLoop(); // 🔥 IMPORTANT (await it)
+    runLoop().catch(async (err) => {
+      console.error("Runner loop error after restore:", err);
+      await clearCurrentTaskState();
+
+      if (isRunnerEnabled) {
+        await scheduleNextRun(ERROR_RETRY_DELAY_MS);
+      }
+    });
   }
 });
