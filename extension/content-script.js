@@ -55,7 +55,7 @@ window.addEventListener("load", async () => {
       }, 1500);
       return;
     }
-  
+
     if (window.location.pathname.includes("/buying/orders")) {
       setTimeout(async () => {
         if (await stopIfNeeded("page load verify orders page")) return;
@@ -63,7 +63,7 @@ window.addEventListener("load", async () => {
       }, 1500);
       return;
     }
-  
+
     if (/^\/buying\/\d+/.test(window.location.pathname)) {
       setTimeout(async () => {
         if (await stopIfNeeded("page load verify order detail page")) return;
@@ -90,7 +90,7 @@ window.addEventListener("load", async () => {
       return;
     }
   }
-  
+
   if (window.location.pathname.includes("/buy/")) {
     setTimeout(async () => {
       if (await stopIfNeeded("page load buy page")) return;
@@ -133,16 +133,16 @@ async function handleTask() {
       handleBuyPage();
       return;
     }
-  
+
     goToOfferPage();
     return;
   }
-  
+
   if (currentTask.type === "REMOVE") {
     handleRemoveFlow();
     return;
   }
-  
+
   if (currentTask.type === "VERIFY_BID_STATUS") {
     handleVerifyFlow();
     return;
@@ -152,7 +152,7 @@ async function handleTask() {
     handleOrderStatusSyncFlow();
     return;
   }
-  
+
   console.log("Unknown task type, skipping:", currentTask.type);
 }
 
@@ -767,32 +767,32 @@ async function handleVerifyOrdersPage(attempt = 0) {
       }, 1000);
       return;
     }
-  
+
     console.log("❌ Verify: no matching order found");
     reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
     return;
   }
-  
+
   console.log("🔍 Matching order row text:", matchingRow.innerText);
-  
+
   const orderNumber = extractOrderNumberFromText(matchingRow.innerText || rawPageText);
-  
+
   if (!orderNumber) {
     reportTaskResult("VERIFY_FAILED", {
       errorMessage: "Matching order found but could not extract order number"
     });
     return;
   }
-  
+
   console.log("✅ Verify: matching order found, clicking order row for detail page", {
     orderNumber
   });
-  
+
   await storePendingVerifyOrderMeta({
     orderNumber,
     recordId: currentTask.recordId
   });
-  
+
   clickOrderRowForDetail(matchingRow);
 
   setTimeout(async () => {
@@ -1328,6 +1328,36 @@ function openSizeDropdownAndSelect(targetSize) {
 }
 
 function selectSizeFromDropdown(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+  console.log("Trying to select size from dropdown:", normalizedTarget);
+
+  const allButtons = Array.from(document.querySelectorAll("button"));
+  const allDivs = Array.from(document.querySelectorAll("div"));
+  const allSpans = Array.from(document.querySelectorAll("span"));
+
+  const candidates = [...allButtons, ...allDivs, ...allSpans];
+
+  const match = candidates.find((el) => {
+    const text = normalizeText(el.innerText);
+    return (
+      text === normalizedTarget ||
+      text === `eu ${normalizedTarget}` ||
+      text.includes(`eu ${normalizedTarget}`)
+    );
+  });
+
+  if (!match) {
+    console.log("Size option not found yet, retrying...");
+    setTimeout(() => selectSizeFromDropdown(targetSize), 1000);
+    return;
+  }
+
+  console.log("Clicking size option:", match.innerText);
+  match.click();
+
+  setTimeout(() => {
+    goToOfferPage(targetSize);
+  }, 1200);
   selectSizeFromScrollableDropdown(
     targetSize,
     () => {
@@ -1362,6 +1392,43 @@ function openSizeDropdownAndSelectForRemove(targetSize) {
 }
 
 function selectSizeFromDropdownForRemove(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+  console.log("🧹 Trying to select size from dropdown for REMOVE:", normalizedTarget);
+
+  const candidates = Array.from(
+    document.querySelectorAll("button, [role='option'], li, div, span")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    // voorkom dat we de dropdown control zelf pakken
+    if (text.includes("size:")) return false;
+
+    return text === normalizedTarget || text === `eu ${normalizedTarget}`;
+  });
+
+  if (candidates.length === 0) {
+    console.log("REMOVE: size option not found yet, retrying...");
+    setTimeout(() => selectSizeFromDropdownForRemove(targetSize), 1000);
+    return;
+  }
+
+  // pak de kortste match, meestal de echte optie
+  const match = candidates.sort(
+    (a, b) => normalizeText(a.innerText).length - normalizeText(b.innerText).length
+  )[0];
+
+  console.log("🧹 Clicking size option for REMOVE:", match.innerText);
+  clickElement(match);
+
+  setTimeout(() => {
+    clickUpdateButtonForRemove();
+  }, 2500);
   selectSizeFromScrollableDropdown(
     targetSize,
     () => {
@@ -1409,10 +1476,10 @@ function clickUpdateButtonForRemove(attempt = 0) {
 
   (async () => {
     if (await stopIfNeeded("before update click")) return;
-  
+
     console.log("🧹 Clicking real Update control:", updateEl.innerText);
     clickElement(updateEl);
-  
+
     setTimeout(() => {
       waitForRemoveEditPage();
     }, 2500);
@@ -1498,10 +1565,10 @@ function clickDeleteBidButtonForRemove(attempt = 0) {
 
   (async () => {
     if (await stopIfNeeded("before delete bid click")) return;
-  
+
     console.log("🧹 Clicking Delete Bid:", deleteBtn.innerText);
     clickElement(deleteBtn);
-  
+
     setTimeout(() => {
       waitForReturnToProductPageAfterRemove();
     }, 2000);
@@ -1581,6 +1648,36 @@ function openSizeDropdownAndSelectForRemoveVerification(targetSize) {
 }
 
 function selectSizeFromDropdownForRemoveVerification(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+  console.log("🧹 Selecting size for REMOVE verification:", normalizedTarget);
+
+  const allButtons = Array.from(document.querySelectorAll("button"));
+  const allDivs = Array.from(document.querySelectorAll("div"));
+  const allSpans = Array.from(document.querySelectorAll("span"));
+
+  const candidates = [...allButtons, ...allDivs, ...allSpans];
+
+  const match = candidates.find((el) => {
+    const text = normalizeText(el.innerText);
+    return (
+      text === normalizedTarget ||
+      text === `eu ${normalizedTarget}` ||
+      text.includes(`eu ${normalizedTarget}`)
+    );
+  });
+
+  if (!match) {
+    console.log("REMOVE VERIFY: size option not found yet, retrying...");
+    setTimeout(() => selectSizeFromDropdownForRemoveVerification(targetSize), 1000);
+    return;
+  }
+
+  console.log("🧹 Clicking size option for REMOVE verification:", match.innerText);
+  match.click();
+
+  setTimeout(() => {
+    checkIfBidRemovedForSelectedSize();
+  }, 1500);
   selectSizeFromScrollableDropdown(
     targetSize,
     () => {
@@ -1653,150 +1750,55 @@ function handleBuyPage(attempt = 0) {
     return;
   }
 
-  if (attempt > 25) {
-    console.log("BUY page flow failed after multiple attempts");
+  // Alleen direct naar price form als er OOK een Review Bid knop zichtbaar is
+  const priceInput = findBidInput();
+  const hasReviewActionButton = Array.from(document.querySelectorAll("button")).some((btn) => {
+    const text = (btn.innerText || "").trim().toLowerCase();
+    return text.includes("review bid") || text.includes("review order");
+  });
+
+  if (priceInput && hasReviewActionButton) {
+    console.log("Bid input screen detected directly");
+    setTimeout(() => fillBidPrice(), 800);
+    return;
+  }
+
+  if (attempt > 20) {
+    console.log("BUY page size not found after multiple attempts");
     reportTaskResult("BID_UPDATE_FAILED", {
-      errorMessage: `BUY page flow failed for size ${currentTask.size}`
+      errorMessage: "BUY page size not found after multiple attempts"
     });
     return;
   }
 
-  const priceInput = findBidInput();
-  const hasReviewActionButton = Array.from(document.querySelectorAll("button")).some((btn) => {
-    const text = normalizeText(btn.innerText || "");
-    return text.includes("review bid") || text.includes("review order");
-  });
+  console.log("📍 On BUY page, selecting size again...");
 
-  // MODE 1: already on pricing form
-  if (priceInput && hasReviewActionButton) {
-    console.log("📍 BUY page pricing form detected");
-    openBuyPageSizeAndContinue(currentTask.size);
-    return;
-  }
-
-  // MODE 2: initial size grid page
-  const clickedGridSize = clickBuyPageInitialSizeOption(currentTask.size);
-
-  if (clickedGridSize) {
-    console.log("✅ Clicked initial BUY page size tile, waiting for pricing form...");
-    setTimeout(() => {
-      handleBuyPage(attempt + 1);
-    }, 1500);
-    return;
-  }
-
-  console.log("BUY page initial size tile not found yet, retrying...");
-  setTimeout(() => {
-    handleBuyPage(attempt + 1);
-  }, 1000);
-}
-
-function clickBuyPageInitialSizeOption(targetSize) {
-  const normalizedTarget = normalizeText(targetSize);
+  const targetSize = normalizeText(currentTask.size);
 
   const candidates = Array.from(
-    document.querySelectorAll("button, [role='button'], li, div, span")
+    document.querySelectorAll("button, [role='button'], li, span, p, div")
   ).filter((el) => {
-    const text = normalizeText(el.innerText || "");
-    const rect = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
-
+    const text = normalizeText(el.innerText);
     if (!text) return false;
-    if (style.visibility === "hidden" || style.display === "none") return false;
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    if (text.length > 20) return false;
 
-    // exclude obvious non-size controls
-    if (
-      text.includes("review bid") ||
-      text.includes("review order") ||
-      text.includes("buy now") ||
-      text.includes("better bid") ||
-      text.includes("good bid") ||
-      text.includes("cancel") ||
-      text.includes("edit") ||
-      text.includes("size:")
-    ) {
-      return false;
-    }
-
-    return (
-      text === normalizedTarget ||
-      text === `eu ${normalizedTarget}` ||
-      text.includes(`eu ${normalizedTarget}`)
-    );
+    return text === `eu ${targetSize}` || text === targetSize;
   });
 
-  if (candidates.length === 0) return false;
-
-  const match = candidates.sort((a, b) => {
-    const aText = normalizeText(a.innerText || "");
-    const bText = normalizeText(b.innerText || "");
-
-    // prefer shortest match like "eu 46 2/3"
-    return aText.length - bText.length;
-  })[0];
-
-  console.log("🔥 Clicking BUY page initial size tile:", match.innerText);
-  clickElement(match);
-  return true;
-}
-
-function openBuyPageSizeAndContinue(targetSize, attempt = 0) {
-  console.log("🔥 Opening BUY page size picker for:", targetSize);
-
-  const buttons = Array.from(document.querySelectorAll("button, [role='button']"));
-
-  const dropdownButton = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-    return text.includes("eu ") || text === "size:" || text.includes("size");
-  });
-
-  if (!dropdownButton) {
-    if (attempt > 20) {
-      reportTaskResult("BID_UPDATE_FAILED", {
-        errorMessage: `BUY page size dropdown not found for size ${targetSize}`
-      });
-      return;
-    }
-
-    console.log("BUY page size dropdown not found yet, retrying...");
-    setTimeout(() => {
-      openBuyPageSizeAndContinue(targetSize, attempt + 1);
-    }, 1000);
+  if (candidates.length === 0) {
+    console.log("Buy page size not found yet, retrying...");
+    setTimeout(() => handleBuyPage(attempt + 1), 800);
     return;
   }
 
-  const currentText = normalizeText(dropdownButton.innerText);
-  const normalizedTarget = normalizeText(targetSize);
+  const match = candidates[0];
 
-  if (
-    currentText === normalizedTarget ||
-    currentText === `eu ${normalizedTarget}` ||
-    currentText.includes(`eu ${normalizedTarget}`)
-  ) {
-    console.log("BUY page size already selected:", dropdownButton.innerText);
-    setTimeout(() => {
-      fillBidPrice();
-    }, 1000);
-    return;
-  }
-
-  console.log("🔥 Clicking BUY page size dropdown:", dropdownButton.innerText);
-  dropdownButton.click();
+  console.log("🔥 Clicking BUY page size:", match.innerText);
+  match.click();
 
   setTimeout(() => {
-    selectBuyPageSizeFromDropdown(targetSize);
-  }, 1000);
-}
-
-function selectBuyPageSizeFromDropdown(targetSize) {
-  selectSizeFromScrollableDropdown(
-    targetSize,
-    () => {
-      fillBidPrice();
-    },
-    "BUY_PAGE"
-  );
+    fillBidPrice();
+  }, 1500);
 }
 
 function findBidInput() {
@@ -2168,11 +2170,11 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
         recordId: currentTask.recordId
       }
     });
-    
+
     // 🔥 STOP huidige task zodat er GEEN nieuwe run start
     currentTask = null;
     await chrome.storage.local.remove("currentTask");
-    
+
     window.location.href = "https://stockx.com/buying/orders";
     return;
   }
