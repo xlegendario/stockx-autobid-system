@@ -42,7 +42,8 @@ async function loadState() {
   const data = await chrome.storage.local.get([
     "runnerEnabled",
     "forceStop",
-    "currentTaskStartedAt"
+    "currentTaskStartedAt",
+    "currentTask"
   ]);
 
   isRunnerEnabled = data.runnerEnabled === true;
@@ -50,13 +51,9 @@ async function loadState() {
     typeof data.currentTaskStartedAt === "number"
       ? data.currentTaskStartedAt
       : null;
-}
 
-chrome.storage.local.get(["currentTask"]).then((data) => {
-  if (data.currentTask) {
-    isTaskInProgress = true;
-  }
-});
+  isTaskInProgress = !!data.currentTask;
+}
 
 async function saveState(forceStop = false) {
   await chrome.storage.local.set({
