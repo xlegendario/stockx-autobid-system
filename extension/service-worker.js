@@ -279,12 +279,12 @@ async function runLoop() {
     return;
   }
 
-  await loadState();
+  await loadState(); // 🔥 REQUIRED
   await recoverIfTaskTimedOut();
 
   if (isTaskInProgress) {
-    console.log("⏳ Task still in progress, skipping loop");
-    await scheduleNextRun(2000); // IMPORTANT FIX
+    console.log("⏳ Task still in progress, retrying soon...");
+    await scheduleNextRun(2000); // 🔥 CRITICAL FIX
     return;
   }
 
@@ -293,6 +293,7 @@ async function runLoop() {
   if (!isRunnerEnabled) return;
 
   if (!result.task) {
+    console.log("😴 No task, scheduling next loop");
     await scheduleNextRun(LOOP_DELAY_MS);
     return;
   }
