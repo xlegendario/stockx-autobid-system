@@ -70,7 +70,7 @@ async function scheduleNextRun(delayMs) {
 
   const delayMinutes = Math.max(delayMs / 60000, 0.1);
 
-  console.log("⏰ Scheduling next run in", delayMs, "ms (", delayMinutes, "min )");
+  console.log("⏰ Scheduling next run in", delayMs, "ms");
 
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
 
@@ -452,6 +452,6 @@ loadState().then(async () => {
 
     await scheduleNextRun(1000);
 
-    await runLoop(); // 🔥 IMPORTANT: await it
+    await runLoop(); // 🔥 IMPORTANT (await it)
   }
 });
