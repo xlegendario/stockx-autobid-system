@@ -46,7 +46,11 @@ async function loadState() {
     "currentTask"
   ]);
 
-  isRunnerEnabled = data.runnerEnabled === true;
+  // 🔥 only update if not already explicitly set
+  if (!isRunnerEnabled) {
+    isRunnerEnabled = data.runnerEnabled === true;
+  }
+
   currentTaskStartedAt =
     typeof data.currentTaskStartedAt === "number"
       ? data.currentTaskStartedAt
