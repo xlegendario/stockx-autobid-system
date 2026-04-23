@@ -238,22 +238,17 @@ function parseMoneyValue(raw) {
   let normalized = cleaned;
 
   if (hasComma && hasDot) {
-    // laatste separator is decimal separator
     const lastComma = cleaned.lastIndexOf(",");
     const lastDot = cleaned.lastIndexOf(".");
 
     if (lastComma > lastDot) {
-      // voorbeeld: 1.234,56
       normalized = cleaned.replace(/\./g, "").replace(",", ".");
     } else {
-      // voorbeeld: 1,234.56
       normalized = cleaned.replace(/,/g, "");
     }
   } else if (hasComma) {
-    // voorbeeld: 142,33
     normalized = cleaned.replace(",", ".");
   } else {
-    // voorbeeld: 142.33 of 14233
     normalized = cleaned;
   }
 
@@ -304,7 +299,6 @@ function findMatchingOrderRow(expectedSizeText) {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
-    // header row uitsluiten
     if (
       text.includes("item") &&
       text.includes("order number") &&
@@ -322,11 +316,10 @@ function findMatchingOrderRow(expectedSizeText) {
 
   if (rowCandidates.length === 0) return null;
 
-  // pak de breedste/grootste row = meestal de echte klikbare orderstrook
   return rowCandidates.sort((a, b) => {
     const aRect = a.getBoundingClientRect();
     const bRect = b.getBoundingClientRect();
-    return (bRect.width * bRect.height) - (aRect.width * aRect.height);
+    return bRect.width * bRect.height - aRect.width * aRect.height;
   })[0];
 }
 
@@ -361,7 +354,7 @@ function findMatchingOrderRowByOrderNumber(orderNumber) {
   return rowCandidates.sort((a, b) => {
     const aRect = a.getBoundingClientRect();
     const bRect = b.getBoundingClientRect();
-    return (bRect.width * bRect.height) - (aRect.width * aRect.height);
+    return bRect.width * bRect.height - aRect.width * aRect.height;
   })[0];
 }
 
@@ -397,7 +390,6 @@ function findVerifySearchInput() {
 
   if (exactMatch) return exactMatch;
 
-  // fallback, mocht StockX de placeholder iets wijzigen
   return inputs.find((input) => {
     const rect = input.getBoundingClientRect();
     const style = window.getComputedStyle(input);
@@ -478,7 +470,6 @@ function handleVerifyBidsPage(attempt = 0) {
 
   const pageText = getPageText();
 
-  // 1. expliciete empty state
   if (
     pageText.includes("you don't have active bids") ||
     pageText.includes("items that you are bidding on will show up here")
@@ -488,7 +479,6 @@ function handleVerifyBidsPage(attempt = 0) {
     return;
   }
 
-  // 2. alleen rows/cards checken, niet hele page text
   const rowCandidates = Array.from(
     document.querySelectorAll("tr, [role='row'], li, article, div")
   ).filter((el) => {
@@ -521,13 +511,11 @@ function handleVerifyBidsPage(attempt = 0) {
 function extractOrderNumberFromText(text) {
   const raw = String(text || "");
 
-  // 1. beste match voor StockX order numbers zoals 03-TZCVTVJ5R0
   const explicitStockxMatch = raw.match(/\b\d{2}-[A-Z0-9-]{6,}\b/i);
   if (explicitStockxMatch?.[0]) {
     return explicitStockxMatch[0].trim();
   }
 
-  // 2. split in regels en probeer label-gebaseerde extractie
   const lines = raw
     .split("\n")
     .map((line) => line.trim())
@@ -549,7 +537,6 @@ function extractOrderNumberFromText(text) {
     }
   }
 
-  // 3. fallback: zoek tokens die op ordernummer lijken
   for (const line of lines) {
     const tokenMatches = line.match(/\b[A-Za-z0-9-]{6,}\b/g) || [];
 
@@ -583,7 +570,6 @@ function extractOrderStatusFromDetailPageText(text) {
 
   if (lines.length === 0) return null;
 
-  // 1. probeer expliciet bekende status keywords
   const statusKeywords = [
     "order confirmed",
     "order received",
@@ -596,14 +582,11 @@ function extractOrderStatusFromDetailPageText(text) {
 
   const match = lines.find((line) => {
     const normalized = normalizeText(line);
-    return statusKeywords.some((keyword) =>
-      normalized.includes(keyword)
-    );
+    return statusKeywords.some((keyword) => normalized.includes(keyword));
   });
 
   if (match) return match;
 
-  // 2. fallback: zoek rond "status"
   for (let i = 0; i < lines.length; i++) {
     const normalized = normalizeText(lines[i]);
 
@@ -613,7 +596,6 @@ function extractOrderStatusFromDetailPageText(text) {
     }
   }
 
-  // 3. fallback: laatste redelijke regel (maar skip accessibility crap)
   const ignored = [
     "skip to main content",
     "back",
@@ -626,12 +608,12 @@ function extractOrderStatusFromDetailPageText(text) {
   const fallback = lines.find((line) => {
     const normalized = normalizeText(line);
     if (!normalized) return false;
-
     return !ignored.includes(normalized);
   });
 
   return fallback || null;
 }
+
 function findTrackOrderHref() {
   const candidates = Array.from(
     document.querySelectorAll("a, button, [role='button']")
@@ -663,15 +645,13 @@ function extractTrackingNumberFromUrl(url) {
   try {
     const parsed = new URL(url, window.location.origin);
 
-    // 1. eerst bekende query params
     const directParams = [
       "parcelNumber",
       "trackingNumber",
       "tracking_number",
-      "tracking"
       "tracking",
-      "awb",   // DHL
-      "AWB"    // voor de zekerheid
+      "awb",
+      "AWB"
     ];
 
     for (const key of directParams) {
@@ -681,17 +661,18 @@ function extractTrackingNumberFromUrl(url) {
 
     const fullUrl = parsed.toString();
 
-    const queryMatch =
-      fullUrl.match(/[?&](?:parcelNumber|trackingNumber|tracking_number|tracking)=([^&]+)/i);
-    // 2. DHL AWB uit querystring
+    const queryMatch = fullUrl.match(
+      /[?&](?:parcelNumber|trackingNumber|tracking_number|tracking)=([^&]+)/i
+    );
+    if (queryMatch?.[1]) {
+      return decodeURIComponent(queryMatch[1]).trim();
+    }
+
     const dhlAwbMatch = fullUrl.match(/[?&]AWB=([A-Z0-9]+)/i);
     if (dhlAwbMatch?.[1]) {
       return decodeURIComponent(dhlAwbMatch[1]).trim();
     }
 
-    if (queryMatch?.[1]) {
-      return decodeURIComponent(queryMatch[1]).trim();
-    // 3. DPD / algemene tracking params fallback
     const genericQueryMatch = fullUrl.match(
       /[?&](?:parcelNumber|trackingNumber|tracking_number|tracking)=([^&]+)/i
     );
@@ -699,7 +680,6 @@ function extractTrackingNumberFromUrl(url) {
       return decodeURIComponent(genericQueryMatch[1]).trim();
     }
 
-    // 4. UPS fallback: 1Z + 16 chars = totaal 18 chars
     const upsMatch = fullUrl.match(/\b1Z[0-9A-Z]{16}\b/i);
     if (upsMatch?.[0]) {
       return upsMatch[0].trim();
@@ -1113,7 +1093,6 @@ async function handleInstantOrderDetailPage(attempt = 0) {
     finalStockXPrice
   });
 
-  // currentTask tijdelijk herstellen zodat reportTaskResult wél kan submitten
   currentTask = {
     recordId: meta.recordId,
     type: "PLACE_OR_UPDATE",
@@ -1128,6 +1107,7 @@ async function handleInstantOrderDetailPage(attempt = 0) {
     orderNumber: meta.orderNumber,
     finalStockXPrice
   });
+
   return;
 }
 
@@ -1257,7 +1237,6 @@ function selectSizeFromDropdownForRemove(targetSize) {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
-    // voorkom dat we de dropdown control zelf pakken
     if (text.includes("size:")) return false;
 
     return text === normalizedTarget || text === `eu ${normalizedTarget}`;
@@ -1269,7 +1248,6 @@ function selectSizeFromDropdownForRemove(targetSize) {
     return;
   }
 
-  // pak de kortste match, meestal de echte optie
   const match = candidates.sort(
     (a, b) => normalizeText(a.innerText).length - normalizeText(b.innerText).length
   )[0];
@@ -1312,10 +1290,10 @@ function clickUpdateButtonForRemove(attempt = 0) {
     return;
   }
 
-  // pak de kleinste 'update' match, niet een grote container
   const updateEl = candidates.sort(
-    (a, b) => a.getBoundingClientRect().width * a.getBoundingClientRect().height -
-              b.getBoundingClientRect().width * b.getBoundingClientRect().height
+    (a, b) =>
+      a.getBoundingClientRect().width * a.getBoundingClientRect().height -
+      b.getBoundingClientRect().width * b.getBoundingClientRect().height
   )[0];
 
   (async () => {
@@ -1357,7 +1335,7 @@ function waitForRemoveEditPage(attempt = 0) {
   const looksLikeEditPage =
     pageText.includes("delete bid") ||
     pageText.includes("review bid") ||
-    pageText.includes("bid") && pageText.includes("sell faster");
+    (pageText.includes("bid") && pageText.includes("sell faster"));
 
   if (looksLikeEditPage) {
     console.log("🧹 Edit-like page detected, retrying for Delete Bid button...");
@@ -1565,7 +1543,6 @@ function goToOfferPage() {
     return;
   }
 
-  // als we al op /buy/slug zitten → strip "buy/"
   if (slug.startsWith("buy/")) {
     slug = slug.replace(/^buy\//, "");
   }
@@ -1587,7 +1564,6 @@ function handleBuyPage(attempt = 0) {
     return;
   }
 
-  // Alleen direct naar price form als er OOK een Review Bid knop zichtbaar is
   const priceInput = findBidInput();
   const hasReviewActionButton = Array.from(document.querySelectorAll("button")).some((btn) => {
     const text = (btn.innerText || "").trim().toLowerCase();
@@ -1677,7 +1653,6 @@ function formatBidValue(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "";
 
-  // veilige optie: nooit boven maxBid gaan
   return String(Math.floor(num));
 }
 
@@ -1740,7 +1715,6 @@ function fillBidPrice(attempt = 0) {
     "value"
   )?.set;
 
-  // clear first
   if (nativeSetter) {
     nativeSetter.call(input, "");
   } else {
@@ -1751,7 +1725,6 @@ function fillBidPrice(attempt = 0) {
   input.dispatchEvent(new Event("change", { bubbles: true }));
   input.dispatchEvent(new Event("blur", { bubbles: true }));
 
-  // fill desired bid
   if (nativeSetter) {
     nativeSetter.call(input, bidValue);
   } else {
@@ -1958,7 +1931,6 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
   if (attempt > 20) {
     console.log("Final outcome not detected after multiple attempts");
 
-    // fallback: use button type if nothing else detected
     const normalized = String(finalButtonText || "").trim().toLowerCase();
 
     if (normalized.includes("place order")) {
@@ -1980,7 +1952,6 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
 
   const pageText = getPageText();
 
-  // ORDER SUCCESS
   if (
     pageText.includes("your order has been placed successfully") ||
     pageText.includes("congratulations! your order has been placed successfully")
@@ -2008,7 +1979,6 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
       }
     });
 
-    // 🔥 STOP huidige task zodat er GEEN nieuwe run start
     currentTask = null;
     await chrome.storage.local.remove("currentTask");
 
@@ -2016,17 +1986,15 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     return;
   }
 
-  // BID SUCCESS
   if (
     pageText.includes("your bid is live") ||
-    pageText.includes("success") && pageText.includes("your bid")
+    (pageText.includes("success") && pageText.includes("your bid"))
   ) {
     console.log("✅ Bid success page detected");
     reportTaskResult(getPlaceOrUpdateSuccessAction());
     return;
   }
 
-  // PAYMENT / FUNDS FAILURE
   if (
     pageText.includes("there was an error with your payment method") ||
     pageText.includes("please enter a new payment method and try again") ||
