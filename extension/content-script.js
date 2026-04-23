@@ -1954,7 +1954,9 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
 
   if (
     pageText.includes("your order has been placed successfully") ||
-    pageText.includes("congratulations! your order has been placed successfully")
+    pageText.includes("congratulations! your order has been placed successfully") ||
+    pageText.includes("order confirmed") ||
+    (pageText.includes("your order total is") && pageText.includes("order #"))
   ) {
     console.log("✅ Order success page detected");
 
