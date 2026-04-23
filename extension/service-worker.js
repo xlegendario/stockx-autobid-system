@@ -68,9 +68,11 @@ async function saveState(forceStop = false) {
 async function scheduleNextRun(delayMs) {
   if (!isRunnerEnabled) return;
 
-  await chrome.alarms.clear(RUNNER_ALARM_NAME);
-
   const delayMinutes = Math.max(delayMs / 60000, 0.1);
+
+  console.log("⏰ Scheduling next run in", delayMs, "ms (", delayMinutes, "min )");
+
+  await chrome.alarms.clear(RUNNER_ALARM_NAME);
 
   await chrome.alarms.create(RUNNER_ALARM_NAME, {
     delayInMinutes: delayMinutes
@@ -183,6 +185,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== RUNNER_ALARM_NAME) return;
 
+  console.log("⏰ Alarm fired → running loop");
+
   runLoop().catch(async (err) => {
     console.error("Runner loop error:", err);
 
@@ -268,18 +272,28 @@ async function forceStopRunner() {
 }
 
 async function runLoop() {
-  if (!isRunnerEnabled) return;
+  console.log("🔄 runLoop triggered");
 
+  if (!isRunnerEnabled) {
+    console.log("⛔ Runner not enabled");
+    return;
+  }
+
+  await loadState();
   await recoverIfTaskTimedOut();
 
-  if (isTaskInProgress) return;
+  if (isTaskInProgress) {
+    console.log("⏳ Task still in progress, skipping loop");
+    await scheduleNextRun(2000); // IMPORTANT FIX
+    return;
+  }
 
   const result = await handleSingleTask();
 
   if (!isRunnerEnabled) return;
 
   if (!result.task) {
-    scheduleNextRun(LOOP_DELAY_MS);
+    await scheduleNextRun(LOOP_DELAY_MS);
     return;
   }
 }
@@ -429,19 +443,14 @@ function buildStockXUrl(task) {
   return `https://stockx.com/search?s=${sku}`;
 }
 
-loadState().then(() => {
+loadState().then(async () => {
+  console.log("🔄 Worker booted");
+
   if (isRunnerEnabled) {
     console.log("🔄 Restoring runner loop after reload");
 
-    scheduleNextRun(1000);
+    await scheduleNextRun(1000);
 
-    runLoop().catch(async (err) => {
-      console.error("Runner loop error after restore:", err);
-      await clearCurrentTaskState();
-
-      if (isRunnerEnabled) {
-        await scheduleNextRun(ERROR_RETRY_DELAY_MS);
-      }
-    });
+    await runLoop(); // 🔥 IMPORTANT: await it
   }
 });
