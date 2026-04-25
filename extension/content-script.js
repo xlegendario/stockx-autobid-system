@@ -1922,7 +1922,25 @@ function reportTaskResult(action, extra = {}) {
       payload
     },
     (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn("TASK_COMPLETED message failed:", chrome.runtime.lastError.message);
+
+        setTimeout(() => {
+          chrome.runtime.sendMessage({
+            type: "WAKE_RUNNER"
+          });
+        }, 1000);
+
+        return;
+      }
+
       console.log("Backend result response:", response);
+
+      setTimeout(() => {
+        chrome.runtime.sendMessage({
+          type: "WAKE_RUNNER"
+        });
+      }, 1000);
     }
   );
 }
