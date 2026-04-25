@@ -152,8 +152,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (isRunnerEnabled) {
           try {
-            await continueRunnerAfterTaskCompletion();
-
             if (isImmediateOrderPlacementAction(message.payload?.action)) {
               await scheduleNextRun(ORDER_PLACED_NEXT_TASK_DELAY_MS);
             } else {
