@@ -39,6 +39,21 @@ async function recoverIfTaskTimedOut() {
   return true;
 }
 
+async function recoverIfBrokenTaskState() {
+  const data = await chrome.storage.local.get([
+    "currentTask",
+    "currentTaskStartedAt"
+  ]);
+
+  if (data.currentTask && !data.currentTaskStartedAt) {
+    console.warn("Broken task state detected, resetting runner state");
+    await clearCurrentTaskState();
+    return true;
+  }
+
+  return false;
+}
+
 async function loadState() {
   const data = await chrome.storage.local.get([
     "runnerEnabled",
@@ -145,40 +160,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "WAKE_RUNNER") {
+    runLoop().catch(async (err) => {
+      console.error("WAKE_RUNNER loop error:", err);
+  
+      await clearCurrentTaskState();
+  
+      if (isRunnerEnabled) {
+        await scheduleNextRun(ERROR_RETRY_DELAY_MS);
+      }
+    });
+  
+    sendResponse({ ok: true, message: "Runner wake requested" });
+    return true;
+  }
+  
   if (message.type === "TASK_COMPLETED") {
     submitTaskResult(message.payload)
       .then(async (result) => {
         await clearCurrentTaskState();
-
+  
         if (isRunnerEnabled) {
           try {
-            if (isImmediateOrderPlacementAction(message.payload?.action)) {
-              await scheduleNextRun(ORDER_PLACED_NEXT_TASK_DELAY_MS);
-            } else {
-              await continueRunnerAfterTaskCompletion();
-            }
+            const delay = isImmediateOrderPlacementAction(message.payload?.action)
+              ? ORDER_PLACED_NEXT_TASK_DELAY_MS
+              : 1000;
+  
+            await scheduleNextRun(delay);
+  
+            setTimeout(() => {
+              runLoop().catch(async (err) => {
+                console.error("Runner loop error after task completion:", err);
+  
+                clearCurrentTaskState().then(async () => {
+                  if (isRunnerEnabled) {
+                    await scheduleNextRun(ERROR_RETRY_DELAY_MS);
+                  }
+                });
+              });
+            }, 250);
           } catch (err) {
-            console.error("Runner loop error after success:", err);
+            console.error("Runner loop scheduling error after success:", err);
             await clearCurrentTaskState();
-
+  
             if (isRunnerEnabled) {
               await scheduleNextRun(ERROR_RETRY_DELAY_MS);
             }
           }
         }
-
+  
         sendResponse({ ok: true, result });
       })
       .catch(async (err) => {
         await clearCurrentTaskState();
-
+  
         if (isRunnerEnabled) {
           await scheduleNextRun(ERROR_RETRY_DELAY_MS);
         }
-
+  
         sendResponse({ ok: false, error: err.message });
       });
-
+  
     return true;
   }
 });
@@ -282,8 +324,11 @@ async function runLoop() {
     return;
   }
 
+  await recoverIfBrokenTaskState();
   await recoverIfTaskTimedOut();
-
+  
+  await loadState();
+  
   if (isTaskInProgress) {
     console.log("⏳ Task still in progress, retrying soon...");
     await scheduleNextRun(2000);
