@@ -4,6 +4,8 @@ const TOKEN = process.env.AIRTABLE_TOKEN;
 const QUEUE_VIEW_NAME = process.env.AIRTABLE_VIEW_NAME;
 const ACTIVE_BIDS_VIEW_NAME = process.env.AIRTABLE_ACTIVE_BIDS_VIEW_NAME;
 const ORDERS_PLACED_VIEW_NAME = process.env.AIRTABLE_ORDERS_PLACED_VIEW_NAME;
+const SECOND_ACTIVE_BIDS_VIEW_NAME = process.env.AIRTABLE_SECOND_ACTIVE_BIDS_VIEW_NAME;
+const SECOND_ORDERS_PLACED_VIEW_NAME = process.env.AIRTABLE_SECOND_ORDERS_PLACED_VIEW_NAME;
 
 const BASE_URL = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_NAME)}`;
 
@@ -57,6 +59,14 @@ export async function fetchActiveBids() {
 
 export async function fetchOrdersPlaced() {
   return await fetchViewRecords(ORDERS_PLACED_VIEW_NAME);
+}
+
+export async function fetchSecondActiveBids() {
+  return await fetchViewRecords(SECOND_ACTIVE_BIDS_VIEW_NAME);
+}
+
+export async function fetchSecondOrdersPlaced() {
+  return await fetchViewRecords(SECOND_ORDERS_PLACED_VIEW_NAME);
 }
 
 function escapeAirtableFormulaValue(value) {
