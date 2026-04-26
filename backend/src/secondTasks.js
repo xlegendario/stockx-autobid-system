@@ -1,4 +1,5 @@
 import { resolveStockxUrlBySku } from "./retailed.js";
+import { updateOrder } from "./airtable.js";
 
 function normalizeLookup(value) {
   if (Array.isArray(value)) return value[0];
@@ -149,6 +150,7 @@ export function isSecondBidPlaceOrUpdateCandidate(fields) {
   const status = getSecondStatus(fields);
 
   if (!isSecondBidFlowEnabled(fields)) return false;
+  if (status === "SECOND_BID_IN_PROGRESS") return false;
   if (status !== "SECOND_BID_NEEDED" && status !== "SECOND_BID_PLACED") return false;
   if (status === "SECOND_ORDER_PLACED") return false;
   if (secondBidNeedsRemoval(fields)) return false;
@@ -169,6 +171,10 @@ export function isSecondBidPlaceOrUpdateCandidate(fields) {
 export async function buildSecondBidTask(record) {
   const fields = record.fields;
   const sku = getSku(fields);
+
+  await updateOrder(record.id, {
+    "Second Bid Flow Status": "SECOND_BID_IN_PROGRESS"
+  });
 
   return {
     type: "PLACE_SECOND_BID",
