@@ -266,7 +266,12 @@ export async function buildTask(
   
     const canPlaceOrUpdate = needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
 
-    if (!canPlaceOrUpdate && !needsRemoval(f)) return false;
+    const canSecondFlow =
+      isInitialSecondBidFlowCandidate(f) ||
+      isSecondBidPlaceOrUpdateCandidate(f) ||
+      isSecondBidRemoveCandidate(f);
+    
+    if (!canPlaceOrUpdate && !needsRemoval(f) && !canSecondFlow) return false;
   
     // Block alleen echte nieuwe placements
     if (canPlaceOrUpdate && !hasBidPlaced(f)) {
