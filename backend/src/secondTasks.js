@@ -159,8 +159,10 @@ export function isSecondBidPlaceOrUpdateCandidate(fields) {
   if (!Number.isFinite(target)) return false;
   if (!Number.isFinite(max)) return false;
 
-  if (!hasSecondBidPlaced(fields)) return true;
-
+  if (!hasSecondBidPlaced(fields)) {
+    return status === "SECOND_BID_NEEDED";
+  }
+  
   return needsSecondBidUpdate(fields);
 }
 
