@@ -368,14 +368,33 @@ export async function buildTask(
       }
     }
   
-    if (isSecondBidVerifyCandidate(f)) {
-      secondBidVerifyCandidates.push(record);
-      continue;
-    }
-    
     if (!isReadyForVerify(f)) continue;
-    
+  
     verifyCandidates.push(record);
+  }
+
+  for (const record of secondActiveBidRecords) {
+    const f = record.fields;
+  
+    if (!isAutobidEnabled(f)) continue;
+  
+    const runner = getRunner(f);
+    const accountGroup = getAccountGroupKey(f);
+    const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
+  
+    if (accountMode === "MAIN_ACCOUNT") {
+      if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
+        continue;
+      }
+    } else {
+      if (runner !== normalizedRequestedRunner) {
+        continue;
+      }
+    }
+  
+    if (!isSecondBidVerifyCandidate(f)) continue;
+  
+    secondBidVerifyCandidates.push(record);
   }
   
   for (const record of orderSyncRecords) {
@@ -394,11 +413,6 @@ export async function buildTask(
         continue;
       }
     }
-    
-    if (isSecondOrderSyncCandidate(f)) {
-      secondOrderSyncCandidates.push(record);
-      continue;
-    }
   
     if (!needsOrderSync(f)) continue;
   
@@ -406,6 +420,28 @@ export async function buildTask(
     if (!orderNumber) continue;
   
     orderSyncCandidates.push(record);
+  }
+
+  for (const record of secondOrderSyncRecords) {
+    const f = record.fields;
+  
+    const runner = getRunner(f);
+    const accountGroup = getAccountGroupKey(f);
+    const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
+  
+    if (accountMode === "MAIN_ACCOUNT") {
+      if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
+        continue;
+      }
+    } else {
+      if (runner !== normalizedRequestedRunner) {
+        continue;
+      }
+    }
+  
+    if (!isSecondOrderSyncCandidate(f)) continue;
+  
+    secondOrderSyncCandidates.push(record);
   }
   
   const chosenRemove =
