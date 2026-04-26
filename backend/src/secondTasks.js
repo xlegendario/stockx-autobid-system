@@ -169,10 +169,8 @@ export function isSecondBidPlaceOrUpdateCandidate(fields) {
   if (secondBidNeedsRemoval(fields)) return false;
 
   const target = getSecondCurrentStockXBid(fields);
-  const max = getSecondBidMaxPrice(fields);
 
   if (!Number.isFinite(target)) return false;
-  if (!Number.isFinite(max)) return false;
 
   if (!hasSecondBidPlaced(fields)) {
     return status === "SECOND_BID_NEEDED";
