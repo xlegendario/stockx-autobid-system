@@ -106,7 +106,12 @@ async function continueRunnerAfterTaskCompletion() {
 }
 
 function isImmediateOrderPlacementAction(action) {
-  return action === "ORDER_PLACED" || action === "ORDER_PLACED_FALLBACK";
+  return (
+    action === "ORDER_PLACED" ||
+    action === "ORDER_PLACED_FALLBACK" ||
+    action === "FIRST_ORDER_PLACED" ||
+    action === "SECOND_ORDER_PLACED"
+  );
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
