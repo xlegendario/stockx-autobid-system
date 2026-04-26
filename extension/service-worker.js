@@ -463,12 +463,19 @@ async function submitTaskResult(payload) {
 }
 
 function buildStockXUrl(task) {
-  // VERIFY flow → direct naar bids page
-  if (task.type === "VERIFY_BID_STATUS") {
+  // VERIFY flows → direct naar bids page
+  if (
+    task.type === "VERIFY_BID_STATUS" ||
+    task.type === "VERIFY_SECOND_BID_STATUS"
+  ) {
     return "https://stockx.com/buying/bids";
   }
 
-  if (task.type === "SYNC_ORDER_STATUS") {
+  // ORDER SYNC flows → direct naar orders page
+  if (
+    task.type === "SYNC_ORDER_STATUS" ||
+    task.type === "SYNC_SECOND_ORDER_STATUS"
+  ) {
     return "https://stockx.com/buying/orders";
   }
 
@@ -480,16 +487,20 @@ function buildStockXUrl(task) {
       return task.stockxUrl;
     }
 
-    // PLACE flow → direct naar buy page
-    if (task.type === "PLACE_OR_UPDATE") {
+    if (
+      task.type === "PLACE_OR_UPDATE" ||
+      task.type === "PLACE_SECOND_BID"
+    ) {
       return `https://stockx.com/buy/${slug}?defaultBid=true`;
     }
 
-    // REMOVE flow → normale productpagina
+    if (task.type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK") {
+      return `https://stockx.com/buy/${slug}`;
+    }
+
     return `https://stockx.com/${slug}`;
   }
 
-  // fallback
   const sku = task.sku;
   return `https://stockx.com/search?s=${sku}`;
 }
