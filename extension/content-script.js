@@ -1760,7 +1760,7 @@ function handleInitialSecondBidBuyCheckPage(attempt = 0) {
     maxBid
   });
 
-  if (buyNowPrice >= startBid && buyNowPrice <= maxBid) {
+  if (buyNowPrice <= maxBid) {
     console.log("✅ Buy Now is within range, buying instantly");
 
     currentTask.firstBuyNowPrice = buyNowPrice;
