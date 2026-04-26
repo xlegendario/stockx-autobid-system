@@ -479,13 +479,6 @@ export async function buildTask(
     return await buildSecondBidRemoveTask(chosenSecondRemove);
   }
   
-  const chosenSecondPlace =
-    secondBidPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-  
-  if (chosenSecondPlace) {
-    return await buildSecondBidTask(chosenSecondPlace);
-  }
-  
   const chosenInitialSecondFlow =
     initialSecondBidFlowCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
   
@@ -532,6 +525,13 @@ export async function buildTask(
       currentBid: getCurrentBid(fields),
       stockxUrl
     };
+  }
+
+  const chosenSecondPlace =
+    secondBidPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenSecondPlace) {
+    return await buildSecondBidTask(chosenSecondPlace);
   }
   
   const chosenVerify =
@@ -594,10 +594,6 @@ export async function buildTask(
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
   
-  if (chosenSecondOrderSync) {
-    return buildSecondOrderSyncTask(chosenSecondOrderSync);
-  }
-  
   if (chosenOrderSync) {
     const fields = chosenOrderSync.fields;
   
@@ -607,6 +603,10 @@ export async function buildTask(
       orderNumber: getStockxOrderNumber(fields),
       stockxUrl: fields["StockX URL"] || null
     };
+  }
+
+  if (chosenSecondOrderSync) {
+    return buildSecondOrderSyncTask(chosenSecondOrderSync);
   }
 
   const chosenSecondVerify =
@@ -628,10 +628,6 @@ export async function buildTask(
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
   
-  if (chosenSecondVerify) {
-    return await buildSecondBidVerifyTask(chosenSecondVerify);
-  }
-  
   if (chosenVerify) {
     const fields = chosenVerify.fields;
     const sku = getSku(fields);
@@ -644,6 +640,10 @@ export async function buildTask(
       size,
       stockxUrl: fields["StockX URL"] || null
     };
+  }
+
+  if (chosenSecondVerify) {
+    return await buildSecondBidVerifyTask(chosenSecondVerify);
   }
   
   return null;
