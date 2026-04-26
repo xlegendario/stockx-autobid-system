@@ -1,5 +1,18 @@
 import { resolveStockxUrlBySku } from "./retailed.js";
 
+import {
+  isInitialSecondBidFlowCandidate,
+  buildInitialSecondBidFlowTask,
+  isSecondBidPlaceOrUpdateCandidate,
+  buildSecondBidTask,
+  isSecondBidRemoveCandidate,
+  buildSecondBidRemoveTask,
+  isSecondBidVerifyCandidate,
+  buildSecondBidVerifyTask,
+  isSecondOrderSyncCandidate,
+  buildSecondOrderSyncTask
+} from "./secondTasks.js";
+
 function isVerifyCandidate(fields) {
   return (
     hasBidPlaced(fields) &&
@@ -280,13 +293,43 @@ export async function buildTask(
   const removeCandidates = [];
   const verifyCandidates = [];
   const orderSyncCandidates = [];
+  
+  const initialSecondBidFlowCandidates = [];
+  const secondBidPlaceCandidates = [];
+  const secondBidRemoveCandidates = [];
+  const secondBidVerifyCandidates = [];
+  const secondOrderSyncCandidates = [];
 
   for (const key of Object.keys(groups)) {
     const group = groups[key];
-
+  
     const firstRemove = group.find((record) => needsRemoval(record.fields));
     if (firstRemove) {
       removeCandidates.push(firstRemove);
+      continue;
+    }
+  
+    const firstSecondRemove = group.find((record) =>
+      isSecondBidRemoveCandidate(record.fields)
+    );
+    if (firstSecondRemove) {
+      secondBidRemoveCandidates.push(firstSecondRemove);
+      continue;
+    }
+  
+    const firstSecondPlace = group.find((record) =>
+      isSecondBidPlaceOrUpdateCandidate(record.fields)
+    );
+    if (firstSecondPlace) {
+      secondBidPlaceCandidates.push(firstSecondPlace);
+      continue;
+    }
+  
+    const firstInitialSecondFlow = group.find((record) =>
+      isInitialSecondBidFlowCandidate(record.fields)
+    );
+    if (firstInitialSecondFlow) {
+      initialSecondBidFlowCandidates.push(firstInitialSecondFlow);
       continue;
     }
     
@@ -318,8 +361,13 @@ export async function buildTask(
       }
     }
   
+    if (isSecondBidVerifyCandidate(f)) {
+      secondBidVerifyCandidates.push(record);
+      continue;
+    }
+    
     if (!isReadyForVerify(f)) continue;
-  
+    
     verifyCandidates.push(record);
   }
   
@@ -338,6 +386,11 @@ export async function buildTask(
       if (runner !== normalizedRequestedRunner) {
         continue;
       }
+    }
+    
+    if (isSecondOrderSyncCandidate(f)) {
+      secondOrderSyncCandidates.push(record);
+      continue;
     }
   
     if (!needsOrderSync(f)) continue;
@@ -374,6 +427,27 @@ export async function buildTask(
       size,
       stockxUrl
     };
+  }
+
+  const chosenSecondRemove =
+    secondBidRemoveCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenSecondRemove) {
+    return await buildSecondBidRemoveTask(chosenSecondRemove);
+  }
+  
+  const chosenSecondPlace =
+    secondBidPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenSecondPlace) {
+    return await buildSecondBidTask(chosenSecondPlace);
+  }
+  
+  const chosenInitialSecondFlow =
+    initialSecondBidFlowCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenInitialSecondFlow) {
+    return await buildInitialSecondBidFlowTask(chosenInitialSecondFlow);
   }
   
   const chosenPlace =
@@ -457,6 +531,29 @@ export async function buildTask(
   
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
+
+  const chosenSecondOrderSync =
+    secondOrderSyncCandidates.sort((a, b) => {
+      const aLastSync = getLastOrderSyncTimestamp(a.fields);
+      const bLastSync = getLastOrderSyncTimestamp(b.fields);
+  
+      if (aLastSync === null && bLastSync === null) {
+        return new Date(a.createdTime) - new Date(b.createdTime);
+      }
+  
+      if (aLastSync === null) return -1;
+      if (bLastSync === null) return 1;
+  
+      if (aLastSync !== bLastSync) {
+        return aLastSync - bLastSync;
+      }
+  
+      return new Date(a.createdTime) - new Date(b.createdTime);
+    })[0];
+  
+  if (chosenSecondOrderSync) {
+    return buildSecondOrderSyncTask(chosenSecondOrderSync);
+  }
   
   if (chosenOrderSync) {
     const fields = chosenOrderSync.fields;
@@ -467,6 +564,29 @@ export async function buildTask(
       orderNumber: getStockxOrderNumber(fields),
       stockxUrl: fields["StockX URL"] || null
     };
+  }
+
+  const chosenSecondVerify =
+    secondBidVerifyCandidates.sort((a, b) => {
+      const aLastSync = getLastSyncTimestamp(a.fields);
+      const bLastSync = getLastSyncTimestamp(b.fields);
+  
+      if (aLastSync === null && bLastSync === null) {
+        return new Date(a.createdTime) - new Date(b.createdTime);
+      }
+  
+      if (aLastSync === null) return -1;
+      if (bLastSync === null) return 1;
+  
+      if (aLastSync !== bLastSync) {
+        return aLastSync - bLastSync;
+      }
+  
+      return new Date(a.createdTime) - new Date(b.createdTime);
+    })[0];
+  
+  if (chosenSecondVerify) {
+    return await buildSecondBidVerifyTask(chosenSecondVerify);
   }
   
   if (chosenVerify) {
