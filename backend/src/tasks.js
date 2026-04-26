@@ -234,7 +234,9 @@ export async function buildTask(
   runnerName,
   activeBidRecords = [],
   requestedAccountGroupKey = null,
-  orderSyncRecords = []
+  orderSyncRecords = [],
+  secondActiveBidRecords = [],
+  secondOrderSyncRecords = []
 ) {
   const normalizedRequestedRunner = normalizeRunner(runnerName);
   const activeBidKeys = new Set(
