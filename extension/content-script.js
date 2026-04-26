@@ -2233,6 +2233,7 @@ function reportTaskResult(action, extra = {}) {
     recordId: currentTask.recordId,
     type: currentTask.type,
     maxBid: submittedBid,
+    intendedSecondBid: currentTask?.intendedSecondBid ?? null,
     action,
     ...extra
   };
