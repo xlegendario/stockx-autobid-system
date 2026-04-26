@@ -47,7 +47,7 @@ window.addEventListener("load", async () => {
     return;
   }
 
-  if (currentTask?.type === "VERIFY_BID_STATUS") {
+  if (isVerifyTaskType(currentTask?.type)) {
     if (window.location.pathname.includes("/buying/bids")) {
       setTimeout(async () => {
         if (await stopIfNeeded("page load verify bids page")) return;
@@ -73,7 +73,7 @@ window.addEventListener("load", async () => {
     }
   }
 
-  if (currentTask?.type === "SYNC_ORDER_STATUS") {
+  if (isOrderSyncTaskType(currentTask?.type)) {
     if (window.location.pathname.includes("/buying/orders")) {
       setTimeout(async () => {
         if (await stopIfNeeded("page load order sync orders page")) return;
@@ -94,6 +94,12 @@ window.addEventListener("load", async () => {
   if (window.location.pathname.includes("/buy/")) {
     setTimeout(async () => {
       if (await stopIfNeeded("page load buy page")) return;
+  
+      if (currentTask?.type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK") {
+        handleInitialSecondBidBuyCheckPage();
+        return;
+      }
+  
       handleBuyPage();
     }, 1500);
     return;
@@ -138,17 +144,37 @@ async function handleTask() {
     return;
   }
 
-  if (currentTask.type === "REMOVE") {
+  if (currentTask.type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK") {
+    if (window.location.pathname.includes("/buy/")) {
+      handleInitialSecondBidBuyCheckPage();
+      return;
+    }
+
+    goToOfferPage();
+    return;
+  }
+
+  if (currentTask.type === "PLACE_SECOND_BID") {
+    if (window.location.pathname.includes("/buy/")) {
+      handleBuyPage();
+      return;
+    }
+
+    goToOfferPage();
+    return;
+  }
+
+  if (isRemoveTaskType(currentTask.type)) {
     handleRemoveFlow();
     return;
   }
 
-  if (currentTask.type === "VERIFY_BID_STATUS") {
+  if (isVerifyTaskType(currentTask.type)) {
     handleVerifyFlow();
     return;
   }
 
-  if (currentTask.type === "SYNC_ORDER_STATUS") {
+  if (isOrderSyncTaskType(currentTask.type)) {
     handleOrderStatusSyncFlow();
     return;
   }
@@ -223,6 +249,97 @@ async function getPendingInstantOrderMeta() {
 
 async function clearPendingInstantOrderMeta() {
   await chrome.storage.local.remove(["pendingInstantOrderMeta"]);
+}
+
+function isPlaceBidTaskType(type) {
+  return type === "PLACE_OR_UPDATE" || type === "PLACE_SECOND_BID";
+}
+
+function isVerifyTaskType(type) {
+  return type === "VERIFY_BID_STATUS" || type === "VERIFY_SECOND_BID_STATUS";
+}
+
+function isOrderSyncTaskType(type) {
+  return type === "SYNC_ORDER_STATUS" || type === "SYNC_SECOND_ORDER_STATUS";
+}
+
+function isRemoveTaskType(type) {
+  return type === "REMOVE" || type === "REMOVE_SECOND_BID";
+}
+
+function getBidFailureAction() {
+  return currentTask?.type === "PLACE_SECOND_BID"
+    ? "SECOND_BID_FAILED"
+    : "BID_UPDATE_FAILED";
+}
+
+function getBidSuccessAction() {
+  if (currentTask?.type === "PLACE_SECOND_BID") {
+    const currentBid = Number(currentTask?.currentBid);
+    return Number.isFinite(currentBid) ? "SECOND_BID_UPDATED" : "SECOND_BID_CREATED";
+  }
+
+  return getPlaceOrUpdateSuccessAction();
+}
+
+function getVerifyStillLiveAction() {
+  return currentTask?.type === "VERIFY_SECOND_BID_STATUS"
+    ? "SECOND_BID_VERIFIED_STILL_LIVE"
+    : "BID_VERIFIED_STILL_LIVE";
+}
+
+function getVerifyMissingNoOrderAction() {
+  return currentTask?.type === "VERIFY_SECOND_BID_STATUS"
+    ? "SECOND_BID_MISSING_NO_ORDER_FOUND"
+    : "BID_MISSING_NO_ORDER_FOUND";
+}
+
+function getVerifyOrderPlacedAction() {
+  return currentTask?.type === "VERIFY_SECOND_BID_STATUS"
+    ? "SECOND_ORDER_PLACED"
+    : "ORDER_DETECTED_FROM_ACCEPTED_BID";
+}
+
+function getOrderSyncSuccessAction() {
+  return currentTask?.type === "SYNC_SECOND_ORDER_STATUS"
+    ? "SECOND_ORDER_STATUS_SYNCED"
+    : "ORDER_STATUS_SYNCED";
+}
+
+function getOrderSyncFailedAction() {
+  return currentTask?.type === "SYNC_SECOND_ORDER_STATUS"
+    ? "SECOND_ORDER_STATUS_SYNC_FAILED"
+    : "ORDER_STATUS_SYNC_FAILED";
+}
+
+function getRemoveSuccessAction() {
+  return currentTask?.type === "REMOVE_SECOND_BID"
+    ? "SECOND_BID_REMOVED"
+    : "BID_REMOVED";
+}
+
+function getRemoveFailedAction() {
+  return currentTask?.type === "REMOVE_SECOND_BID"
+    ? "SECOND_BID_REMOVE_FAILED"
+    : "BID_REMOVE_FAILED";
+}
+
+function getRemoveNotFoundAction() {
+  return currentTask?.type === "REMOVE_SECOND_BID"
+    ? "SECOND_BID_REMOVE_FAILED"
+    : "BID_REMOVE_NOT_FOUND";
+}
+
+function getInstantOrderAction() {
+  if (currentTask?.type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK") {
+    return "FIRST_ORDER_PLACED";
+  }
+
+  if (currentTask?.type === "PLACE_SECOND_BID") {
+    return "SECOND_ORDER_PLACED";
+  }
+
+  return "ORDER_PLACED_WITH_DETAILS";
 }
 
 function parseMoneyValue(raw) {
@@ -500,7 +617,7 @@ function handleVerifyBidsPage(attempt = 0) {
 
   if (matchingBidRow) {
     console.log("✅ Verify: bid still live");
-    reportTaskResult("BID_VERIFIED_STILL_LIVE");
+    reportTaskResult(getVerifyStillLiveAction());
     return;
   }
 
@@ -739,7 +856,7 @@ async function handleVerifyOrdersPage(attempt = 0) {
     pageText.includes("items that are being shipped to you will show up here")
   ) {
     console.log("❌ Verify: no pending orders found");
-    reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
+    reportTaskResult(getVerifyMissingNoOrderAction());
     return;
   }
 
@@ -755,7 +872,7 @@ async function handleVerifyOrdersPage(attempt = 0) {
     }
 
     console.log("❌ Verify: no matching order found");
-    reportTaskResult("BID_MISSING_NO_ORDER_FOUND");
+    reportTaskResult(getVerifyMissingNoOrderAction());
     return;
   }
 
@@ -799,14 +916,14 @@ async function handleOrderSyncOrdersPage(attempt = 0) {
   console.log("📦 Checking orders page for order sync...");
 
   if (!currentTask?.orderNumber) {
-    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+    reportTaskResult(getOrderSyncFailedAction(), {
       errorMessage: "No orderNumber available for order sync"
     });
     return;
   }
 
   if (attempt > 12) {
-    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+    reportTaskResult(getOrderSyncFailedAction(), {
       errorMessage: "Could not search orders page for order sync"
     });
     return;
@@ -843,7 +960,7 @@ async function handleOrderSyncOrdersPage(attempt = 0) {
       return;
     }
 
-    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+    reportTaskResult(getOrderSyncFailedAction(), {
       errorMessage: `Could not find order row for ${currentTask.orderNumber}`
     });
     return;
@@ -921,7 +1038,7 @@ async function handleVerifyOrderDetailPage(attempt = 0) {
 
   await clearPendingVerifyOrderMeta();
 
-  reportTaskResult("ORDER_DETECTED_FROM_ACCEPTED_BID", {
+  reportTaskResult(getVerifyOrderPlacedAction(), {
     orderNumber: pendingMeta.orderNumber,
     finalStockXPrice
   });
@@ -931,14 +1048,14 @@ async function handleOrderSyncDetailPage(attempt = 0) {
   console.log("📦 Checking order detail page for status sync...");
 
   if (!currentTask?.orderNumber) {
-    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+    reportTaskResult(getOrderSyncFailedAction(), {
       errorMessage: "No orderNumber available on order detail page"
     });
     return;
   }
 
   if (attempt > 12) {
-    reportTaskResult("ORDER_STATUS_SYNC_FAILED", {
+    reportTaskResult(getOrderSyncFailedAction(), {
       errorMessage: "Could not extract order status from detail page"
     });
     return;
@@ -974,7 +1091,7 @@ async function handleOrderSyncDetailPage(attempt = 0) {
     stockxTrackingNumber
   });
 
-  reportTaskResult("ORDER_STATUS_SYNCED", {
+  reportTaskResult(getOrderSyncSuccessAction(), {
     orderNumber: currentTask.orderNumber,
     stockxOrderStatus,
     stockxTrackingUrl,
@@ -1095,7 +1212,9 @@ async function handleInstantOrderDetailPage(attempt = 0) {
 
   currentTask = {
     recordId: meta.recordId,
-    type: "PLACE_OR_UPDATE",
+    type: meta.resultAction === "FIRST_ORDER_PLACED"
+      ? "PLACE_OR_BUY_WITH_SECOND_BID_CHECK"
+      : "PLACE_OR_UPDATE",
     maxBid: null
   };
 
@@ -1103,9 +1222,10 @@ async function handleInstantOrderDetailPage(attempt = 0) {
 
   await clearPendingInstantOrderMeta();
 
-  reportTaskResult("ORDER_PLACED_WITH_DETAILS", {
+  reportTaskResult(meta.resultAction || "ORDER_PLACED_WITH_DETAILS", {
     orderNumber: meta.orderNumber,
-    finalStockXPrice
+    finalStockXPrice,
+    firstBuyNowPrice: meta.firstBuyNowPrice || null
   });
 
   return;
@@ -1264,7 +1384,7 @@ function clickUpdateButtonForRemove(attempt = 0) {
   console.log("🧹 REMOVE flow reached clickUpdateButtonForRemove");
 
   if (attempt > 25) {
-    reportTaskResult("BID_REMOVE_NOT_FOUND", {
+    reportTaskResult(getRemoveNotFoundAction(), {
       errorMessage: "Update button not found after selecting size"
     });
     return;
@@ -1312,7 +1432,7 @@ function waitForRemoveEditPage(attempt = 0) {
   console.log("🧹 Waiting for remove edit page...");
 
   if (attempt > 15) {
-    reportTaskResult("BID_REMOVE_FAILED", {
+    reportTaskResult(getRemoveFailedAction(), {
       errorMessage: "Update clicked but edit page did not load"
     });
     return;
@@ -1352,7 +1472,7 @@ function clickDeleteBidButtonForRemove(attempt = 0) {
   console.log("🧹 Trying to click Delete Bid...");
 
   if (attempt > 15) {
-    reportTaskResult("BID_REMOVE_FAILED", {
+    reportTaskResult(getRemoveFailedAction(), {
       errorMessage: "Delete Bid button not found on edit page"
     });
     return;
@@ -1401,7 +1521,7 @@ function waitForReturnToProductPageAfterRemove(attempt = 0) {
   console.log("🧹 Waiting to return to product page after Delete Bid...");
 
   if (attempt > 20) {
-    reportTaskResult("BID_REMOVE_FAILED", {
+    reportTaskResult(getRemoveFailedAction(), {
       errorMessage: "Delete Bid clicked but did not return to product page"
     });
     return;
@@ -1433,7 +1553,7 @@ function waitForReturnToProductPageAfterRemove(attempt = 0) {
 
 async function verifyRemovedBidForTargetSize() {
   if (!currentTask) {
-    reportTaskResult("BID_REMOVE_FAILED", {
+    reportTaskResult(getRemoveFailedAction(), {
       errorMessage: "No currentTask available during post-delete verification"
     });
     return;
@@ -1506,7 +1626,7 @@ function checkIfBidRemovedForSelectedSize(attempt = 0) {
   console.log("🧹 Checking if bid is removed for selected size...");
 
   if (attempt > 12) {
-    reportTaskResult("BID_REMOVE_FAILED", {
+    reportTaskResult(getRemoveFailedAction(), {
       errorMessage: "Could not verify bid removal after re-selecting target size"
     });
     return;
@@ -1524,7 +1644,7 @@ function checkIfBidRemovedForSelectedSize(attempt = 0) {
 
   if (!updateBtn && !hasCurrentBidText) {
     console.log("✅ Bid removed successfully for target size");
-    reportTaskResult("BID_REMOVED");
+    reportTaskResult(getRemoveSuccessAction());
     return;
   }
 
@@ -1553,14 +1673,173 @@ function goToOfferPage() {
   window.location.href = offerUrl;
 }
 
+function findBuyNowSizeTile(targetSize) {
+  const normalizedTarget = normalizeText(targetSize);
+
+  const candidates = Array.from(
+    document.querySelectorAll("button, [role='button'], li, div")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    const hasSize =
+      text.includes(`eu ${normalizedTarget}`) ||
+      text === normalizedTarget ||
+      text.includes(` ${normalizedTarget} `);
+
+    const hasPrice = /€\s*\d+/.test(el.innerText || "");
+
+    return hasSize && hasPrice;
+  });
+
+  if (candidates.length === 0) return null;
+
+  return candidates.sort((a, b) => {
+    const aText = normalizeText(a.innerText);
+    const bText = normalizeText(b.innerText);
+    return aText.length - bText.length;
+  })[0];
+}
+
+function extractBuyNowFromSizeTile(tile) {
+  if (!tile) return null;
+
+  const text = tile.innerText || "";
+  const match = text.match(/€\s*([\d.,]+)/);
+
+  if (!match?.[1]) return null;
+
+  return parseMoneyValue(match[1]);
+}
+
+function handleInitialSecondBidBuyCheckPage(attempt = 0) {
+  if (!currentTask) return;
+
+  if (attempt > 20) {
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Could not find Buy Now price for second bid flow check"
+    });
+    return;
+  }
+
+  const startBid = Number(currentTask.startBid);
+  const maxBid = Number(currentTask.maxBid);
+
+  if (!Number.isFinite(startBid) || !Number.isFinite(maxBid)) {
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Missing valid startBid or maxBid for second bid flow check"
+    });
+    return;
+  }
+
+  const tile = findBuyNowSizeTile(currentTask.size);
+
+  if (!tile) {
+    console.log("Second flow: size tile with Buy Now price not found yet, retrying...");
+    setTimeout(() => handleInitialSecondBidBuyCheckPage(attempt + 1), 800);
+    return;
+  }
+
+  const buyNowPrice = extractBuyNowFromSizeTile(tile);
+
+  if (!Number.isFinite(buyNowPrice)) {
+    console.log("Second flow: Buy Now price not parsed yet, retrying...");
+    setTimeout(() => handleInitialSecondBidBuyCheckPage(attempt + 1), 800);
+    return;
+  }
+
+  console.log("Second flow Buy Now check:", {
+    size: currentTask.size,
+    buyNowPrice,
+    startBid,
+    maxBid
+  });
+
+  if (buyNowPrice >= startBid && buyNowPrice <= maxBid) {
+    console.log("✅ Buy Now is within range, buying instantly");
+
+    currentTask.firstBuyNowPrice = buyNowPrice;
+    chrome.storage.local.set({ currentTask });
+
+    clickElement(tile);
+
+    setTimeout(() => {
+      waitForReviewOrderEnabledForInstantBuy();
+    }, 1800);
+
+    return;
+  }
+
+  console.log("Buy Now not within range, falling back to normal bid flow");
+
+  currentTask = {
+    ...currentTask,
+    type: "PLACE_OR_UPDATE",
+    maxBid: startBid,
+    currentBid: null
+  };
+
+  chrome.storage.local.set({ currentTask });
+
+  const url = new URL(window.location.href);
+  if (!url.searchParams.get("defaultBid")) {
+    url.searchParams.set("defaultBid", "true");
+    window.location.href = url.toString();
+    return;
+  }
+
+  handleBuyPage();
+}
+
+function waitForReviewOrderEnabledForInstantBuy(attempt = 0) {
+  if (attempt > 20) {
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Review Order button not found for instant Buy Now"
+    });
+    return;
+  }
+
+  const buttons = Array.from(document.querySelectorAll("button"));
+
+  const btn = buttons.find((b) => {
+    const text = normalizeText(b.innerText);
+    return text.includes("review order") || text.includes("review purchase");
+  });
+
+  if (!btn) {
+    setTimeout(() => waitForReviewOrderEnabledForInstantBuy(attempt + 1), 1000);
+    return;
+  }
+
+  const isDisabled =
+    btn.disabled ||
+    btn.getAttribute("aria-disabled") === "true";
+
+  if (isDisabled) {
+    setTimeout(() => waitForReviewOrderEnabledForInstantBuy(attempt + 1), 1000);
+    return;
+  }
+
+  clickElement(btn);
+
+  setTimeout(() => {
+    clickConfirmBid();
+  }, 2500);
+}
+
 function handleBuyPage(attempt = 0) {
   if (!currentTask) {
     console.log("No currentTask available on buy page");
     return;
   }
 
-  if (currentTask.type !== "PLACE_OR_UPDATE") {
-    console.log("Buy page skipped: not a PLACE_OR_UPDATE task");
+  if (!isPlaceBidTaskType(currentTask.type)) {
+    console.log("Buy page skipped: not a place bid task");
     return;
   }
 
@@ -1578,7 +1857,7 @@ function handleBuyPage(attempt = 0) {
 
   if (attempt > 20) {
     console.log("BUY page size not found after multiple attempts");
-    reportTaskResult("BID_UPDATE_FAILED", {
+    reportTaskResult(getBidFailureAction(), {
       errorMessage: "BUY page size not found after multiple attempts"
     });
     return;
@@ -1682,7 +1961,7 @@ function fillBidPrice(attempt = 0) {
 
   if (attempt > 15) {
     console.log("Could not find bid input after multiple attempts");
-    reportTaskResult("BID_UPDATE_FAILED", {
+    reportTaskResult(getBidFailureAction(), {
       errorMessage: "Could not find bid input after multiple attempts"
     });
     return;
@@ -1700,7 +1979,7 @@ function fillBidPrice(attempt = 0) {
 
   if (!bidValue) {
     console.log("No valid maxBid available on task");
-    reportTaskResult("BID_UPDATE_FAILED", {
+    reportTaskResult(getBidFailureAction(), {
       errorMessage: "No valid bid value available on task"
     });
     return;
@@ -1758,7 +2037,7 @@ function fillBidPrice(attempt = 0) {
 function waitForReviewBidEnabled(attempt = 0) {
   if (attempt > 15) {
     console.log("Review button never became enabled");
-    reportTaskResult("BID_UPDATE_FAILED", {
+    reportTaskResult(getBidFailureAction(), {
       errorMessage: "Review button never became enabled"
     });
     return;
@@ -1813,7 +2092,7 @@ function clickElement(el) {
 async function clickReviewBid(attempt = 0) {
   if (attempt > 15) {
     console.log("Review button not found after multiple attempts");
-    reportTaskResult("BID_UPDATE_FAILED", {
+    reportTaskResult(getBidFailureAction(), {
       errorMessage: "Review button not found after multiple attempts"
     });
     return;
@@ -1845,7 +2124,7 @@ async function clickReviewBid(attempt = 0) {
 async function clickConfirmBid(attempt = 0) {
   if (attempt > 20) {
     console.log("Confirm/Place button not found after multiple attempts");
-    reportTaskResult("BID_UPDATE_FAILED", {
+    reportTaskResult(getBidFailureAction(), {
       errorMessage: "Confirm/Place button not found after multiple attempts"
     });
     return;
@@ -1959,7 +2238,7 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     }
 
     if (normalized.includes("confirm bid")) {
-      reportTaskResult("BID_UPDATE_FAILED", {
+      reportTaskResult(getBidFailureAction(), {
         errorMessage: "No success/failure screen detected after Confirm Bid"
       });
       return;
@@ -1995,7 +2274,9 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     await chrome.storage.local.set({
       pendingInstantOrderMeta: {
         orderNumber,
-        recordId: currentTask.recordId
+        recordId: currentTask.recordId,
+        resultAction: getInstantOrderAction(),
+        firstBuyNowPrice: currentTask.firstBuyNowPrice || null
       }
     });
 
@@ -2011,7 +2292,7 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     (pageText.includes("success") && pageText.includes("your bid"))
   ) {
     console.log("✅ Bid success page detected");
-    reportTaskResult(getPlaceOrUpdateSuccessAction());
+    reportTaskResult(getBidSuccessAction());
     return;
   }
 
