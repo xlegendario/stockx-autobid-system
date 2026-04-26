@@ -1797,9 +1797,55 @@ function handleInitialSecondBidBuyCheckPage(attempt = 0) {
 }
 
 function waitForReviewOrderEnabledForInstantBuy(attempt = 0) {
+  if (attempt > 25) {
+    reportTaskResult("BID_UPDATE_FAILED", {
+      errorMessage: "Buy Now option / Review Order button not found for instant Buy Now"
+    });
+    return;
+  }
+
+  const expectedBuyNow = Number(currentTask?.firstBuyNowPrice);
+
+  const buyNowOption = Array.from(
+    document.querySelectorAll("button, [role='button'], div")
+  ).find((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    const price = parseMoneyValue(el.innerText || "");
+
+    return (
+      text.includes("buy now") &&
+      Number.isFinite(price) &&
+      Number.isFinite(expectedBuyNow) &&
+      Math.floor(price) === Math.floor(expectedBuyNow)
+    );
+  });
+
+  if (buyNowOption) {
+    console.log("🔥 Clicking Buy Now pricing option:", buyNowOption.innerText);
+    clickElement(buyNowOption);
+
+    setTimeout(() => {
+      waitForReviewOrderEnabledAfterBuyNowOption(attempt + 1);
+    }, 1500);
+
+    return;
+  }
+
+  console.log("Buy Now pricing option not found yet, retrying...");
+  setTimeout(() => waitForReviewOrderEnabledForInstantBuy(attempt + 1), 1000);
+}
+
+function waitForReviewOrderEnabledAfterBuyNowOption(attempt = 0) {
   if (attempt > 20) {
     reportTaskResult("BID_UPDATE_FAILED", {
-      errorMessage: "Review Order button not found for instant Buy Now"
+      errorMessage: "Review Order button not found after selecting Buy Now option"
     });
     return;
   }
@@ -1812,7 +1858,8 @@ function waitForReviewOrderEnabledForInstantBuy(attempt = 0) {
   });
 
   if (!btn) {
-    setTimeout(() => waitForReviewOrderEnabledForInstantBuy(attempt + 1), 1000);
+    console.log("Review Order button not found yet after Buy Now option, retrying...");
+    setTimeout(() => waitForReviewOrderEnabledAfterBuyNowOption(attempt + 1), 1000);
     return;
   }
 
@@ -1821,10 +1868,12 @@ function waitForReviewOrderEnabledForInstantBuy(attempt = 0) {
     btn.getAttribute("aria-disabled") === "true";
 
   if (isDisabled) {
-    setTimeout(() => waitForReviewOrderEnabledForInstantBuy(attempt + 1), 1000);
+    console.log("Review Order button still disabled, waiting...");
+    setTimeout(() => waitForReviewOrderEnabledAfterBuyNowOption(attempt + 1), 1000);
     return;
   }
 
+  console.log("✅ Review Order button enabled:", btn.innerText);
   clickElement(btn);
 
   setTimeout(() => {
