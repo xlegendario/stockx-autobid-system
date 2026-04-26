@@ -2231,9 +2231,18 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     const normalized = String(finalButtonText || "").trim().toLowerCase();
 
     if (normalized.includes("place order")) {
-      reportTaskResult("ORDER_PLACED_FALLBACK", {
-        errorMessage: "No success/failure screen detected after Place Order"
-      });
+      const instantAction = getInstantOrderAction();
+    
+      if (instantAction === "ORDER_PLACED_WITH_DETAILS") {
+        reportTaskResult("ORDER_PLACED_FALLBACK", {
+          errorMessage: "No success/failure screen detected after Place Order"
+        });
+      } else {
+        reportTaskResult(getBidFailureAction(), {
+          errorMessage: "No success/failure screen detected after Place Order"
+        });
+      }
+    
       return;
     }
 
@@ -2263,9 +2272,17 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     if (!orderNumber) {
       console.log("❌ Could not extract order number from success page");
 
-      reportTaskResult("ORDER_PLACED_FALLBACK", {
-        errorMessage: "Success page but no order number found"
-      });
+      const instantAction = getInstantOrderAction();
+
+      if (instantAction === "ORDER_PLACED_WITH_DETAILS") {
+        reportTaskResult("ORDER_PLACED_FALLBACK", {
+          errorMessage: "Success page but no order number found"
+        });
+      } else {
+        reportTaskResult(getBidFailureAction(), {
+          errorMessage: "Success page but no order number found"
+        });
+      }
       return;
     }
 
@@ -2302,9 +2319,12 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
     pageText.includes("payment method")
   ) {
     console.log("❌ Payment failure / no funds detected");
-    reportTaskResult("NO_FUNDS", {
-      errorMessage: "Payment method declined or insufficient balance"
-    });
+    reportTaskResult(
+      currentTask?.type === "PLACE_SECOND_BID" ? "SECOND_BID_FAILED" : "NO_FUNDS",
+      {
+        errorMessage: "Payment method declined or insufficient balance"
+      }
+    );
     return;
   }
 
