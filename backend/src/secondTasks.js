@@ -151,7 +151,20 @@ export function isSecondBidPlaceOrUpdateCandidate(fields) {
 
   if (!isSecondBidFlowEnabled(fields)) return false;
   if (status === "SECOND_BID_IN_PROGRESS") return false;
-  if (status !== "SECOND_BID_NEEDED" && status !== "SECOND_BID_PLACED") return false;
+  
+  const secondLastAction = String(fields["SecondLastAction"] || "").trim();
+  
+  const retryAllowed =
+    status === "SECOND_BID_FAILED" &&
+    secondLastAction === "SECOND_RETRY_ALLOWED";
+  
+  if (
+    status !== "SECOND_BID_NEEDED" &&
+    status !== "SECOND_BID_PLACED" &&
+    !retryAllowed
+  ) {
+    return false;
+  }
   if (status === "SECOND_ORDER_PLACED") return false;
   if (secondBidNeedsRemoval(fields)) return false;
 
