@@ -163,7 +163,12 @@ export async function submitTaskResult(recordId, payload) {
   if (payload.action === "SECOND_BID_CREATED") {
     return await updateOrder(recordId, {
       SecondBidPlaced: true,
-      SecondCurrentBid: moneyOrNull(payload.maxBid),
+      SecondCurrentBid: moneyOrNull(
+        payload.maxBid ??
+        payload.bidAmount ??
+        payload.currentBid ??
+        currentTask.currentStockXBid
+      ),
       "Second Bid Placed At": now,
       "Second Bid Flow Status": "SECOND_BID_PLACED",
       SecondLastAction: "SECOND_BID_CREATED",
@@ -175,7 +180,12 @@ export async function submitTaskResult(recordId, payload) {
   if (payload.action === "SECOND_BID_UPDATED") {
     return await updateOrder(recordId, {
       SecondBidPlaced: true,
-      SecondCurrentBid: moneyOrNull(payload.maxBid),
+      SecondCurrentBid: moneyOrNull(
+        payload.maxBid ??
+        payload.bidAmount ??
+        payload.currentBid ??
+        currentTask.currentStockXBid
+      ),
       "Second Bid Placed At": payload.secondBidPlacedAt || now,
       "Second Bid Flow Status": "SECOND_BID_PLACED",
       SecondLastAction: "SECOND_BID_UPDATED",
