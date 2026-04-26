@@ -222,8 +222,9 @@ export async function submitTaskResult(recordId, payload) {
     return await updateOrder(recordId, {
       SecondBidPlaced: false,
       SecondCurrentBid: null,
-  
+    
       "Second Bid Flow Status": "SECOND_ORDER_PLACED",
+      "Second StockX Order Status": "Order Confirmed",
       SecondLastAction: "SECOND_ORDER_PLACED",
       LastSyncAt: now,
   
