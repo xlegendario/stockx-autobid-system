@@ -296,7 +296,8 @@ export async function buildTask(
     group.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime));
   });
 
-  const placeCandidates = [];
+  const newPlaceCandidates = [];
+  const updatePlaceCandidates = [];
   const removeCandidates = [];
   const verifyCandidates = [];
   const orderSyncCandidates = [];
@@ -340,12 +341,23 @@ export async function buildTask(
       continue;
     }
     
-    const firstPlace = group.find((record) => {
+    const firstNewPlace = group.find((record) => {
       const f = record.fields;
-      return needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
+      return needsBid(f) && !hasBidPlaced(f) && shouldPlaceOrUpdate(f);
     });
-    if (firstPlace) {
-      placeCandidates.push(firstPlace);
+    
+    if (firstNewPlace) {
+      newPlaceCandidates.push(firstNewPlace);
+      continue;
+    }
+    
+    const firstUpdatePlace = group.find((record) => {
+      const f = record.fields;
+      return needsBidUpdate(f) && shouldPlaceOrUpdate(f);
+    });
+    
+    if (firstUpdatePlace) {
+      updatePlaceCandidates.push(firstUpdatePlace);
     }
   }
 
@@ -486,8 +498,13 @@ export async function buildTask(
     return await buildInitialSecondBidFlowTask(chosenInitialSecondFlow);
   }
   
-  const chosenPlace =
-    placeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  const chosenNewPlace =
+    newPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  const chosenUpdatePlace =
+    updatePlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  const chosenPlace = chosenNewPlace || chosenUpdatePlace;
   
   if (chosenPlace) {
     const fields = chosenPlace.fields;
