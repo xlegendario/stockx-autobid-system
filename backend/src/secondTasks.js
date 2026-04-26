@@ -194,8 +194,16 @@ export async function buildSecondBidTask(record) {
     recordId: record.id,
     sku,
     size: fields["Size"],
+  
+    // waarde die we willen plaatsen/updaten
     maxBid: getSecondCurrentStockXBid(fields),
+  
+    // extra fallback voor result handling
+    intendedSecondBid: getSecondCurrentStockXBid(fields),
+  
+    // wat volgens Airtable/StockX momenteel live staat
     currentBid: getSecondCurrentBid(fields),
+  
     stockxUrl: await resolveUrl(fields)
   };
 }
