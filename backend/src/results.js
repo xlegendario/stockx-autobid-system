@@ -176,6 +176,7 @@ export async function submitTaskResult(recordId, payload) {
     return await updateOrder(recordId, {
       SecondBidPlaced: true,
       SecondCurrentBid: moneyOrNull(payload.maxBid),
+      "Second Bid Placed At": payload.secondBidPlacedAt || now,
       "Second Bid Flow Status": "SECOND_BID_PLACED",
       SecondLastAction: "SECOND_BID_UPDATED",
       LastSyncAt: now,
