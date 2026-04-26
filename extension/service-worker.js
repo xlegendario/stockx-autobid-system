@@ -110,6 +110,7 @@ function isImmediateOrderPlacementAction(action) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("📩 Message received:", message.type, message);
   if (message.type === "FETCH_NEXT_TASK") {
     handleSingleTask()
       .then((result) => sendResponse(result))
@@ -148,7 +149,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "GET_RUNNER_STATUS") {
-    chrome.storage.local.get(["forceStop"]).then((data) => {
+    loadState().then(async () => {
+      const data = await chrome.storage.local.get(["forceStop"]);
+  
       sendResponse({
         ok: true,
         isRunnerEnabled,
@@ -156,7 +159,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         forceStop: data.forceStop === true
       });
     });
-
+  
     return true;
   }
 
