@@ -1,5 +1,10 @@
 import { updateOrder, findOrdersPlacedByStockxOrderNumber } from "./airtable.js";
 
+function moneyOrNull(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.floor(num) : null;
+}
+
 export async function submitTaskResult(recordId, payload) {
   if (!recordId) {
     throw new Error("recordId is required");
@@ -112,6 +117,143 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  if (payload.action === "FIRST_ORDER_PLACED") {
+    const orderNumber = String(payload.orderNumber || "").trim();
+  
+    if (!orderNumber) {
+      return await updateOrder(recordId, {
+        LastAction: "VERIFY_FAILED",
+        LastSyncAt: now,
+        ErrorMessage: "First order placed but no StockX order number was provided"
+      });
+    }
+  
+    const existingRecords = await findOrdersPlacedByStockxOrderNumber(orderNumber);
+    const linkedToOtherRecord = existingRecords.some((record) => record.id !== recordId);
+  
+    if (linkedToOtherRecord) {
+      return await updateOrder(recordId, {
+        LastAction: "BID_MISSING_ORDER_ALREADY_LINKED",
+        LastSyncAt: now,
+        ErrorMessage: `StockX order number ${orderNumber} is already linked to another record`
+      });
+    }
+  
+    return await updateOrder(recordId, {
+      "Fulfillment Status": "StockX Processing",
+      BidPlaced: false,
+      CurrentBid: null,
+  
+      LastAction: "FIRST_ORDER_PLACED",
+      SecondLastAction: "FIRST_ORDER_PLACED",
+      LastSyncAt: now,
+  
+      "StockX Order Number": orderNumber,
+      "Final StockX Price": moneyOrNull(payload.finalStockXPrice),
+  
+      "First StockX Buy Now Price": moneyOrNull(payload.firstBuyNowPrice),
+      "First StockX Order Placed At": now,
+  
+      "Second Bid Flow Status": "SECOND_BID_NEEDED",
+  
+      ErrorMessage: ""
+    });
+  }
+  
+  if (payload.action === "SECOND_BID_CREATED") {
+    return await updateOrder(recordId, {
+      SecondBidPlaced: true,
+      SecondCurrentBid: moneyOrNull(payload.maxBid),
+      "Second Bid Placed At": now,
+      "Second Bid Flow Status": "SECOND_BID_PLACED",
+      SecondLastAction: "SECOND_BID_CREATED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+  
+  if (payload.action === "SECOND_BID_UPDATED") {
+    return await updateOrder(recordId, {
+      SecondBidPlaced: true,
+      SecondCurrentBid: moneyOrNull(payload.maxBid),
+      "Second Bid Flow Status": "SECOND_BID_PLACED",
+      SecondLastAction: "SECOND_BID_UPDATED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+  
+  if (payload.action === "SECOND_BID_FAILED") {
+    return await updateOrder(recordId, {
+      "Second Bid Flow Status": "SECOND_BID_FAILED",
+      SecondLastAction: "SECOND_BID_FAILED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Second bid failed"
+    });
+  }
+  
+  if (payload.action === "SECOND_BID_VERIFIED_STILL_LIVE") {
+    return await updateOrder(recordId, {
+      SecondLastAction: "SECOND_BID_VERIFIED_STILL_LIVE",
+      LastSyncAt: now,
+      ErrorMessage: ""
+    });
+  }
+  
+  if (payload.action === "SECOND_BID_MISSING_NO_ORDER_FOUND") {
+    return await updateOrder(recordId, {
+      SecondLastAction: "SECOND_BID_MISSING_NO_ORDER_FOUND",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+  
+  if (payload.action === "SECOND_ORDER_PLACED") {
+    const orderNumber = String(payload.orderNumber || "").trim();
+  
+    if (!orderNumber) {
+      return await updateOrder(recordId, {
+        SecondLastAction: "SECOND_BID_FAILED",
+        LastSyncAt: now,
+        ErrorMessage: "Second order detected but no StockX order number was provided"
+      });
+    }
+  
+    return await updateOrder(recordId, {
+      SecondBidPlaced: false,
+      SecondCurrentBid: null,
+  
+      "Second Bid Flow Status": "SECOND_ORDER_PLACED",
+      SecondLastAction: "SECOND_ORDER_PLACED",
+      LastSyncAt: now,
+  
+      "Second StockX Order Number": orderNumber,
+      "Second Final StockX Price": moneyOrNull(payload.finalStockXPrice),
+      "Second Order Placed At": now,
+  
+      ErrorMessage: ""
+    });
+  }
+  
+  if (payload.action === "SECOND_BID_REMOVED") {
+    return await updateOrder(recordId, {
+      SecondBidPlaced: false,
+      SecondCurrentBid: null,
+      "Second Bid Flow Status": "SECOND_BID_REMOVED",
+      SecondLastAction: "SECOND_BID_REMOVED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || ""
+    });
+  }
+  
+  if (payload.action === "SECOND_BID_REMOVE_FAILED") {
+    return await updateOrder(recordId, {
+      SecondLastAction: "SECOND_BID_REMOVE_FAILED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Second bid remove flow failed"
+    });
+  }
+
   if (payload.action === "ORDER_PLACED_WITH_DETAILS") {
     const orderNumber = String(payload.orderNumber || "").trim();
 
@@ -208,6 +350,23 @@ export async function submitTaskResult(recordId, payload) {
     return await updateOrder(recordId, {
       LastOrderSyncAt: now,
       ErrorMessage: payload.errorMessage || "Order status sync failed"
+    });
+  }
+
+  if (payload.action === "SECOND_ORDER_STATUS_SYNCED") {
+    return await updateOrder(recordId, {
+      "Second StockX Order Status": payload.stockxOrderStatus || "",
+      "Second StockX Tracking URL": payload.stockxTrackingUrl || "",
+      "Second StockX Tracking Number": payload.stockxTrackingNumber || "",
+      LastSecondOrderSyncAt: now,
+      ErrorMessage: ""
+    });
+  }
+  
+  if (payload.action === "SECOND_ORDER_STATUS_SYNC_FAILED") {
+    return await updateOrder(recordId, {
+      LastSecondOrderSyncAt: now,
+      ErrorMessage: payload.errorMessage || "Second order status sync failed"
     });
   }
 
