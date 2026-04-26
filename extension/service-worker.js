@@ -251,6 +251,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 async function startRunner() {
   isRunnerEnabled = true;
+
+  await chrome.alarms.clear(RUNNER_ALARM_NAME);
+
+  await chrome.storage.local.set({
+    currentTask: null,
+    currentTaskStartedAt: null,
+    forceStop: false
+  });
+
+  resetInProgressState();
+
   await saveState(false);
 
   await scheduleNextRun(500);
