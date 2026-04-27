@@ -150,7 +150,18 @@ export function isSecondBidPlaceOrUpdateCandidate(fields) {
   const status = getSecondStatus(fields);
 
   if (!isSecondBidFlowEnabled(fields)) return false;
-  if (status === "SECOND_BID_IN_PROGRESS") return false;
+  if (status === "SECOND_BID_IN_PROGRESS") {
+    const rawLastSync = fields["LastSyncAt"];
+    const lastSync = rawLastSync ? new Date(rawLastSync) : null;
+  
+    if (
+      !lastSync ||
+      Number.isNaN(lastSync.getTime()) ||
+      Date.now() - lastSync.getTime() < 10 * 60 * 1000
+    ) {
+      return false;
+    }
+  }
   
   const secondLastAction = String(fields["SecondLastAction"] || "").trim();
   
@@ -184,7 +195,8 @@ export async function buildSecondBidTask(record) {
   const sku = getSku(fields);
 
   await updateOrder(record.id, {
-    "Second Bid Flow Status": "SECOND_BID_IN_PROGRESS"
+    "Second Bid Flow Status": "SECOND_BID_IN_PROGRESS",
+    LastSyncAt: new Date().toISOString()
   });
 
   return {
