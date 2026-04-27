@@ -167,7 +167,7 @@ export async function submitTaskResult(recordId, payload) {
         payload.maxBid ??
         payload.bidAmount ??
         payload.currentBid ??
-        currentTask.currentStockXBid
+        payload.currentStockXBid
       ),
       "Second Bid Placed At": now,
       "Second Bid Flow Status": "SECOND_BID_PLACED",
@@ -184,7 +184,7 @@ export async function submitTaskResult(recordId, payload) {
         payload.maxBid ??
         payload.bidAmount ??
         payload.currentBid ??
-        currentTask.currentStockXBid
+        payload.currentStockXBid
       ),
       "Second Bid Placed At": payload.secondBidPlacedAt || now,
       "Second Bid Flow Status": "SECOND_BID_PLACED",
