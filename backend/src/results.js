@@ -213,9 +213,12 @@ export async function submitTaskResult(recordId, payload) {
   
   if (payload.action === "SECOND_BID_MISSING_NO_ORDER_FOUND") {
     return await updateOrder(recordId, {
-      SecondLastAction: "SECOND_BID_MISSING_NO_ORDER_FOUND",
+      SecondBidPlaced: false,
+      SecondCurrentBid: null,
+      "Second Bid Flow Status": "SECOND_BID_REMOVED",
+      SecondLastAction: "SECOND_BID_REMOVED",
       LastSyncAt: now,
-      ErrorMessage: payload.errorMessage || ""
+      ErrorMessage: payload.errorMessage || "Second bid missing on StockX and no second order found"
     });
   }
   
