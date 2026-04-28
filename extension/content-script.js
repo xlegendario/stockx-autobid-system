@@ -887,6 +887,29 @@ async function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
+  if (currentTask.type === "VERIFY_SECOND_BID_STATUS") {
+    const foundOrderNumber = String(orderNumber || "").trim();
+    const firstOrderNumber = String(currentTask.firstStockxOrderNumber || "").trim();
+    const knownSecondOrderNumber = String(currentTask.secondStockxOrderNumber || "").trim();
+  
+    if (firstOrderNumber && foundOrderNumber === firstOrderNumber) {
+      console.log("⚠️ Second verify found FIRST order, ignoring:", {
+        foundOrderNumber,
+        firstOrderNumber
+      });
+  
+      reportTaskResult("SECOND_BID_MISSING_NO_ORDER_FOUND", {
+        errorMessage: `Second bid missing; only first StockX order was found: ${foundOrderNumber}`
+      });
+  
+      return;
+    }
+  
+    if (knownSecondOrderNumber && foundOrderNumber === knownSecondOrderNumber) {
+      console.log("✅ Second verify found already-known second order:", foundOrderNumber);
+    }
+  }
+
   console.log("✅ Verify: matching order found, clicking order row for detail page", {
     orderNumber
   });
