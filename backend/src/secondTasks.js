@@ -260,6 +260,8 @@ export async function buildSecondBidVerifyTask(record) {
     recordId: record.id,
     sku,
     size: fields["Size"],
+    firstStockxOrderNumber: fields["StockX Order Number"] || null,
+    secondStockxOrderNumber: fields["Second StockX Order Number"] || null,
     stockxUrl: await resolveUrl(fields)
   };
 }
