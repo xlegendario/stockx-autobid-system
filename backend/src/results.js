@@ -229,6 +229,17 @@ export async function submitTaskResult(recordId, payload) {
         ErrorMessage: "Second order detected but no StockX order number was provided"
       });
     }
+
+    const existingRecords = await findOrdersPlacedByStockxOrderNumber(orderNumber);
+    const linkedToOtherRecord = existingRecords.some((record) => record.id !== recordId);
+    
+    if (linkedToOtherRecord) {
+      return await updateOrder(recordId, {
+        SecondLastAction: "SECOND_BID_MISSING_NO_ORDER_FOUND",
+        LastSyncAt: now,
+        ErrorMessage: `Second order number ${orderNumber} is already linked to another record`
+      });
+    }
   
     return await updateOrder(recordId, {
       SecondBidPlaced: false,
