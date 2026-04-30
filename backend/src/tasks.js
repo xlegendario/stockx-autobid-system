@@ -470,11 +470,24 @@ export async function buildTask(
       try {
         const resolved = await resolveStockxUrlBySku(sku);
         stockxUrl = resolved.stockxUrl;
-      } catch {
+      } catch (err) {
+        console.error("❌ Failed to resolve StockX URL", {
+          sku,
+          error: err.message
+        });
         stockxUrl = null;
       }
     }
   
+    if (!stockxUrl) {
+      console.error("❌ Skipping REMOVE: missing StockX URL", {
+        sku,
+        size,
+        recordId: chosenRemove.id
+      });
+      return null;
+    }
+    
     return {
       type: "REMOVE",
       recordId: chosenRemove.id,
