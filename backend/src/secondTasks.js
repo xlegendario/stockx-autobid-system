@@ -105,7 +105,11 @@ async function resolveUrl(fields) {
     try {
       const resolved = await resolveStockxUrlBySku(sku);
       stockxUrl = resolved.stockxUrl;
-    } catch {
+    } catch (err) {
+      console.error("❌ Failed to resolve StockX URL in secondTasks", {
+        sku,
+        error: err.message
+      });
       stockxUrl = null;
     }
   }
@@ -232,13 +236,24 @@ export function isSecondBidRemoveCandidate(fields) {
 export async function buildSecondBidRemoveTask(record) {
   const fields = record.fields;
   const sku = getSku(fields);
+  const stockxUrl = await resolveUrl(fields);
+
+  if (!stockxUrl) {
+    console.error("❌ Skipping REMOVE_SECOND_BID: missing StockX URL", {
+      recordId: record.id,
+      sku,
+      size: fields["Size"]
+    });
+
+    return null;
+  }
 
   return {
     type: "REMOVE_SECOND_BID",
     recordId: record.id,
     sku,
     size: fields["Size"],
-    stockxUrl: await resolveUrl(fields)
+    stockxUrl
   };
 }
 
