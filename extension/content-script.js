@@ -19,6 +19,9 @@ chrome.runtime.onMessage.addListener((message) => {
 window.addEventListener("load", async () => {
   console.log("Page loaded:", window.location.href);
 
+  const stored = await chrome.storage.local.get("currentTask");
+  currentTask = stored.currentTask || null;
+
   if (
     currentTask &&
     needsProductPageTask(currentTask.type) &&
@@ -30,9 +33,6 @@ window.addEventListener("load", async () => {
     }, 1500);
     return;
   }
-
-  const stored = await chrome.storage.local.get("currentTask");
-  currentTask = stored.currentTask || null;
 
   const pendingInstant = await getPendingInstantOrderMeta();
 
