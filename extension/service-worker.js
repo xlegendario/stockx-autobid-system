@@ -6,6 +6,7 @@ let isTaskInProgress = false;
 const LOOP_DELAY_MS = 8000;
 const ERROR_RETRY_DELAY_MS = 15000;
 const ORDER_PLACED_NEXT_TASK_DELAY_MS = 8000;
+const BID_RESULT_NEXT_TASK_DELAY_MS = 4000;
 const TASK_TIMEOUT_MS = 120000; // 2 minuten
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
 
@@ -114,6 +115,15 @@ function isImmediateOrderPlacementAction(action) {
   );
 }
 
+function isBidResultAction(action) {
+  return (
+    action === "BID_CREATED" ||
+    action === "BID_UPDATED" ||
+    action === "SECOND_BID_CREATED" ||
+    action === "SECOND_BID_UPDATED"
+  );
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("📩 Message received:", message.type, message);
   if (message.type === "FETCH_NEXT_TASK") {
@@ -190,9 +200,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
         if (isRunnerEnabled) {
           try {
-            const delay = isImmediateOrderPlacementAction(message.payload?.action)
+            const action = message.payload?.action;
+
+            const delay = isImmediateOrderPlacementAction(action)
               ? ORDER_PLACED_NEXT_TASK_DELAY_MS
-              : 1000;
+              : isBidResultAction(action)
+                ? BID_RESULT_NEXT_TASK_DELAY_MS
+                : 1000;
   
             await scheduleNextRun(delay);
   
@@ -206,7 +220,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   }
                 });
               });
-            }, 250);
+            }, delay);
           } catch (err) {
             console.error("Runner loop scheduling error after success:", err);
             await clearCurrentTaskState();
