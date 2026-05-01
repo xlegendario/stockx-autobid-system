@@ -478,15 +478,6 @@ export async function buildTask(
         stockxUrl = null;
       }
     }
-  
-    if (!stockxUrl) {
-      console.error("❌ Skipping REMOVE: missing StockX URL", {
-        sku,
-        size,
-        recordId: chosenRemove.id
-      });
-      return null;
-    }
     
     return {
       type: "REMOVE",
