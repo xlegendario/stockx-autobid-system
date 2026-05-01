@@ -408,6 +408,21 @@ async function handleSingleTask() {
 
   const taskData = await fetchNextTask();
 
+  await loadState();
+  
+  const stopData = await chrome.storage.local.get(["forceStop"]);
+  
+  if (!isRunnerEnabled || stopData.forceStop === true) {
+    console.log("🛑 Runner stopped after fetchNextTask; aborting task open");
+    await clearCurrentTaskState();
+  
+    return {
+      ok: true,
+      message: "Runner stopped after fetch",
+      task: null
+    };
+  }
+  
   if (!taskData.task) {
     return {
       ok: true,
@@ -415,7 +430,7 @@ async function handleSingleTask() {
       task: null
     };
   }
-
+  
   const task = taskData.task;
 
   isTaskInProgress = true;
