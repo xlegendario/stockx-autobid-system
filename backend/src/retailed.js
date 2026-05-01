@@ -1,7 +1,7 @@
 const SEARCH_URL = process.env.RETAILED_STOCKX_SEARCH_URL;
 const API_KEY = process.env.RETAILED_API_KEY;
 
-const RETAILED_TIMEOUT_MS = 4000;
+const RETAILED_TIMEOUT_MS = 10000;
 
 function normalizeSku(sku) {
   if (Array.isArray(sku)) return String(sku[0] || "").trim();
