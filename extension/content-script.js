@@ -151,8 +151,15 @@ function findFirstSearchResultLink() {
   const productLinks = links.filter((a) => {
     const href = a.getAttribute("href") || "";
     const text = normalizeText(a.innerText || "");
+    const rect = a.getBoundingClientRect();
+    const style = window.getComputedStyle(a);
 
-    if (!href.startsWith("/")) return false;
+    if (!href) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    // ❌ exclude logo/home/nav/filter links
+    if (href === "/" || href === "https://stockx.com/") return false;
     if (href.includes("/search")) return false;
     if (href.includes("/buying")) return false;
     if (href.includes("/sell")) return false;
@@ -161,11 +168,29 @@ function findFirstSearchResultLink() {
     if (href.includes("/help")) return false;
     if (href.includes("/login")) return false;
     if (href.includes("/signup")) return false;
+    if (href.includes("/category")) return false;
+    if (href.includes("/brands")) return false;
 
-    const rect = a.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return false;
+    // Alleen links in het product-grid gebied, niet header/sidebar
+    if (rect.top < 250) return false;
+    if (rect.left < 250) return false;
 
-    return text.length > 0;
+    const url = new URL(href, window.location.origin);
+    const path = url.pathname;
+
+    // Product slug is meestal precies 1 path segment: /asics-gel-kayano-...
+    const segments = path.split("/").filter(Boolean);
+    if (segments.length !== 1) return false;
+
+    // Product cards bevatten meestal title/lowest ask/price
+    const parentText = normalizeText(a.closest("div")?.innerText || "");
+    const combinedText = `${text} ${parentText}`;
+
+    return (
+      combinedText.includes("lowest ask") ||
+      combinedText.includes("€") ||
+      combinedText.includes("$")
+    );
   });
 
   if (productLinks.length === 0) return null;
