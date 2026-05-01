@@ -1,4 +1,5 @@
 import { resolveStockxUrlBySku } from "./retailed.js";
+import { updateOrder } from "./airtable.js";
 
 import {
   isInitialSecondBidFlowCandidate,
@@ -81,6 +82,19 @@ function hasBidPlaced(fields) {
   return false;
 }
 
+function isBidInProgress(fields) {
+  const lastAction = String(fields["LastAction"] || "").trim();
+
+  if (lastAction !== "BID_IN_PROGRESS") return false;
+
+  const rawLastSync = fields["LastSyncAt"];
+  const lastSync = rawLastSync ? new Date(rawLastSync) : null;
+
+  if (!lastSync || Number.isNaN(lastSync.getTime())) return true;
+
+  return Date.now() - lastSync.getTime() < 10 * 60 * 1000;
+}
+
 function getRunner(fields) {
   return normalizeRunner(fields["Merchant StockX Runner Name"]);
 }
@@ -138,6 +152,7 @@ function getCurrentBid(fields) {
 
 function shouldPlaceOrUpdate(fields) {
   if (needsRemoval(fields)) return false;
+  if (isBidInProgress(fields)) return false;
 
   const target = getCurrentStockXBid(fields);
   const current = getCurrentBid(fields);
@@ -245,6 +260,13 @@ export async function buildTask(
       .filter(Boolean)
   );
 
+  const inProgressBidKeys = new Set(
+    records
+      .filter((record) => isBidInProgress(record.fields))
+      .map((record) => getBlockingKey(record.fields))
+      .filter(Boolean)
+  );
+
   const filtered = records.filter((r) => {
     const f = r.fields;
   
@@ -278,7 +300,9 @@ export async function buildTask(
     // Block alleen echte nieuwe placements
     if (canPlaceOrUpdate && !hasBidPlaced(f)) {
       const key = getBlockingKey(f);
+    
       if (activeBidKeys.has(key)) return false;
+      if (inProgressBidKeys.has(key)) return false;
     }
   
     return true;
@@ -536,6 +560,12 @@ export async function buildTask(
         stockxUrl = null;
       }
     }
+
+    await updateOrder(chosenPlace.id, {
+      LastAction: "BID_IN_PROGRESS",
+      LastSyncAt: new Date().toISOString(),
+      ErrorMessage: ""
+    });
   
     return {
       type: "PLACE_OR_UPDATE",
