@@ -19,6 +19,18 @@ chrome.runtime.onMessage.addListener((message) => {
 window.addEventListener("load", async () => {
   console.log("Page loaded:", window.location.href);
 
+  if (
+    currentTask &&
+    needsProductPageTask(currentTask.type) &&
+    window.location.pathname.includes("/search")
+  ) {
+    setTimeout(async () => {
+      if (await stopIfNeeded("search fallback page")) return;
+      handleSearchFallbackPage();
+    }, 1500);
+    return;
+  }
+
   const stored = await chrome.storage.local.get("currentTask");
   currentTask = stored.currentTask || null;
 
@@ -105,6 +117,17 @@ window.addEventListener("load", async () => {
     return;
   }
 
+  if (
+    currentTask &&
+    needsProductPageTask(currentTask.type) &&
+    !window.location.pathname.includes("/buy/") &&
+    !window.location.pathname.includes("/search")
+  ) {
+    const ok = await verifyProductPageSkuOrFail();
+  
+    if (!ok) return;
+  }
+
   setTimeout(async () => {
     if (await stopIfNeeded("page load")) return;
     handleTask();
@@ -118,6 +141,97 @@ async function stopIfNeeded(context = "") {
     console.log(`🛑 Force stop triggered${context ? ` during ${context}` : ""}`);
     return true;
   }
+
+  return false;
+}
+
+function findFirstSearchResultLink() {
+  const links = Array.from(document.querySelectorAll("a[href]"));
+
+  const productLinks = links.filter((a) => {
+    const href = a.getAttribute("href") || "";
+    const text = normalizeText(a.innerText || "");
+
+    if (!href.startsWith("/")) return false;
+    if (href.includes("/search")) return false;
+    if (href.includes("/buying")) return false;
+    if (href.includes("/sell")) return false;
+    if (href.includes("/news")) return false;
+    if (href.includes("/about")) return false;
+    if (href.includes("/help")) return false;
+    if (href.includes("/login")) return false;
+    if (href.includes("/signup")) return false;
+
+    const rect = a.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    return text.length > 0;
+  });
+
+  if (productLinks.length === 0) return null;
+
+  productLinks.sort((a, b) => {
+    const ar = a.getBoundingClientRect();
+    const br = b.getBoundingClientRect();
+
+    if (Math.abs(ar.top - br.top) > 20) return ar.top - br.top;
+    return ar.left - br.left;
+  });
+
+  return productLinks[0];
+}
+
+function handleSearchFallbackPage(attempt = 0) {
+  if (!currentTask) return;
+
+  if (attempt > 15) {
+    reportTaskResult(getSearchFallbackFailureAction(), {
+      errorMessage: `Search fallback failed: no product result found for SKU ${getSkuTextFromTask()}`
+    });
+    return;
+  }
+
+  const firstLink = findFirstSearchResultLink();
+
+  if (!firstLink) {
+    console.log("Search fallback: first product link not found yet, retrying...");
+    setTimeout(() => handleSearchFallbackPage(attempt + 1), 1000);
+    return;
+  }
+
+  const href = firstLink.getAttribute("href");
+  const targetUrl = href.startsWith("http")
+    ? href
+    : `https://stockx.com${href}`;
+
+  console.log("Search fallback: opening first product result:", targetUrl);
+
+  window.location.href = targetUrl;
+}
+
+async function verifyProductPageSkuOrFail(attempt = 0) {
+  const expectedSku = getSkuTextFromTask();
+
+  if (!expectedSku) return true;
+
+  const bodyText = String(document.body?.innerText || "").toUpperCase();
+
+  if (bodyText.includes(expectedSku)) {
+    console.log("✅ Search fallback SKU verified:", expectedSku);
+    return true;
+  }
+
+  if (attempt < 12) {
+    window.scrollTo(0, document.body.scrollHeight);
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    return verifyProductPageSkuOrFail(attempt + 1);
+  }
+
+  reportTaskResult(getSearchFallbackFailureAction(), {
+    errorMessage: `Search fallback SKU mismatch. Expected SKU ${expectedSku} was not found on product page ${window.location.href}`
+  });
 
   return false;
 }
@@ -265,6 +379,33 @@ function isOrderSyncTaskType(type) {
 
 function isRemoveTaskType(type) {
   return type === "REMOVE" || type === "REMOVE_SECOND_BID";
+}
+
+function needsProductPageTask(type) {
+  return (
+    type === "PLACE_OR_UPDATE" ||
+    type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK" ||
+    type === "PLACE_SECOND_BID" ||
+    type === "REMOVE" ||
+    type === "REMOVE_SECOND_BID"
+  );
+}
+
+function getSkuTextFromTask() {
+  const raw = currentTask?.sku;
+
+  if (Array.isArray(raw)) {
+    return String(raw[0] || "").trim().toUpperCase();
+  }
+
+  return String(raw || "").trim().toUpperCase();
+}
+
+function getSearchFallbackFailureAction() {
+  if (currentTask?.type === "REMOVE_SECOND_BID") return "SECOND_BID_REMOVE_FAILED";
+  if (currentTask?.type === "PLACE_SECOND_BID") return "SECOND_BID_FAILED";
+  if (currentTask?.type === "REMOVE") return "BID_REMOVE_FAILED";
+  return "BID_UPDATE_FAILED";
 }
 
 function getBidFailureAction() {
