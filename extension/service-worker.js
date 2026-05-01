@@ -2,6 +2,7 @@ import { CONFIG } from "./config.js";
 
 let isRunnerEnabled = false;
 let isTaskInProgress = false;
+let isRunLoopActive = false;
 
 const LOOP_DELAY_MS = 8000;
 const ERROR_RETRY_DELAY_MS = 15000;
