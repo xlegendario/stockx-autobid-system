@@ -348,34 +348,45 @@ async function forceStopRunner() {
 }
 
 async function runLoop() {
-  console.log("🔄 runLoop triggered");
-
-  await loadState();
-
-  if (!isRunnerEnabled) {
-    console.log("⛔ Runner not enabled");
+  if (isRunLoopActive) {
+    console.log("⏳ runLoop already active, skipping duplicate trigger");
     return;
   }
 
-  await recoverIfBrokenTaskState();
-  await recoverIfTaskTimedOut();
-  
-  await loadState();
-  
-  if (isTaskInProgress) {
-    console.log("⏳ Task still in progress, retrying soon...");
-    await scheduleNextRun(2000);
-    return;
-  }
+  isRunLoopActive = true;
 
-  const result = await handleSingleTask();
+  try {
+    console.log("🔄 runLoop triggered");
 
-  if (!isRunnerEnabled) return;
+    await loadState();
 
-  if (!result.task) {
-    console.log("😴 No task, scheduling next loop");
-    await scheduleNextRun(LOOP_DELAY_MS);
-    return;
+    if (!isRunnerEnabled) {
+      console.log("⛔ Runner not enabled");
+      return;
+    }
+
+    await recoverIfBrokenTaskState();
+    await recoverIfTaskTimedOut();
+    
+    await loadState();
+    
+    if (isTaskInProgress) {
+      console.log("⏳ Task still in progress, retrying soon...");
+      await scheduleNextRun(2000);
+      return;
+    }
+
+    const result = await handleSingleTask();
+
+    if (!isRunnerEnabled) return;
+
+    if (!result.task) {
+      console.log("😴 No task, scheduling next loop");
+      await scheduleNextRun(LOOP_DELAY_MS);
+      return;
+    }
+  } finally {
+    isRunLoopActive = false;
   }
 }
 
