@@ -10,6 +10,7 @@ const ORDER_PLACED_NEXT_TASK_DELAY_MS = 8000;
 const BID_RESULT_NEXT_TASK_DELAY_MS = 4000;
 const TASK_TIMEOUT_MS = 120000; // 2 minuten
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
+const AUTH_RETRY_DELAY_MS = 30000;
 
 let currentTaskStartedAt = null;
 
@@ -161,6 +162,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then((result) => sendResponse(result))
       .catch((err) => sendResponse({ ok: false, error: err.message }));
 
+    return true;
+  }
+
+  if (message.type === "AUTH_REQUIRED") {
+    handleAuthRequired()
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+  
     return true;
   }
 
@@ -345,6 +354,32 @@ async function forceStopRunner() {
     isRunnerEnabled,
     isTaskInProgress,
     forceStop: true
+  };
+}
+
+async function handleAuthRequired() {
+  console.warn("🚨 AUTH_REQUIRED → cooling down runner");
+
+  await chrome.alarms.clear(RUNNER_ALARM_NAME);
+  await clearCurrentTaskState();
+
+  isRunnerEnabled = true;
+
+  await chrome.storage.local.set({
+    runnerEnabled: true,
+    forceStop: false,
+    currentTask: null,
+    currentTaskStartedAt: null
+  });
+
+  await scheduleNextRun(AUTH_RETRY_DELAY_MS);
+
+  return {
+    ok: true,
+    message: "Runner cooldown after AUTH_REQUIRED",
+    isRunnerEnabled: true,
+    isTaskInProgress: false,
+    retryInMs: AUTH_RETRY_DELAY_MS
   };
 }
 
