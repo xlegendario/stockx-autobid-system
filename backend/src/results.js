@@ -30,6 +30,24 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  if (payload.action === "STOCKX_LIMITS_CALCULATED") {
+    return await updateOrder(recordId, {
+      "Start StockX Bid": moneyOrNull(payload.startBid),
+      "Max StockX Bid": moneyOrNull(payload.maxBid),
+      LastAction: "STOCKX_LIMITS_CALCULATED",
+      LastSyncAt: now,
+      ErrorMessage: ""
+    });
+  }
+  
+  if (payload.action === "STOCKX_LIMITS_CALCULATION_FAILED") {
+    return await updateOrder(recordId, {
+      LastAction: "STOCKX_LIMITS_CALCULATION_FAILED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "StockX limits calculation failed"
+    });
+  }
+
   if (payload.action === "BID_CREATED" || payload.action === "BID_CREATED_FALLBACK") {
     return await updateOrder(recordId, {
       BidPlaced: true,
