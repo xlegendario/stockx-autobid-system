@@ -183,6 +183,15 @@ function shouldPlaceOrUpdate(fields) {
   if (needsRemoval(fields)) return false;
   if (isBidInProgress(fields)) return false;
 
+  const startBid = parseMoney(fields["Start StockX Bid"]);
+  const maxStockXBid = parseMoney(fields["Max StockX Bid"]);
+
+  const needsLimitCalculation =
+    !Number.isFinite(startBid) ||
+    !Number.isFinite(maxStockXBid);
+
+  if (needsLimitCalculation) return true;
+
   const target = getCurrentStockXBid(fields);
   const current = getCurrentBid(fields);
 
