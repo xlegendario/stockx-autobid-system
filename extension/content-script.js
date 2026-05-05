@@ -317,6 +317,16 @@ async function handleTask() {
     size: currentTask?.size
   });
 
+  if (currentTask.type === "CALCULATE_STOCKX_LIMITS") {
+    if (window.location.pathname.includes("/buy/")) {
+      handleBuyPage();
+      return;
+    }
+  
+    goToOfferPage();
+    return;
+  }
+
   if (currentTask.type === "PLACE_OR_UPDATE") {
     if (window.location.pathname.includes("/buy/")) {
       handleBuyPage();
@@ -435,7 +445,11 @@ async function clearPendingInstantOrderMeta() {
 }
 
 function isPlaceBidTaskType(type) {
-  return type === "PLACE_OR_UPDATE" || type === "PLACE_SECOND_BID";
+  return (
+    type === "PLACE_OR_UPDATE" ||
+    type === "PLACE_SECOND_BID" ||
+    type === "CALCULATE_STOCKX_LIMITS"
+  );
 }
 
 function isVerifyTaskType(type) {
@@ -455,6 +469,7 @@ function needsProductPageTask(type) {
     type === "PLACE_OR_UPDATE" ||
     type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK" ||
     type === "PLACE_SECOND_BID" ||
+    type === "CALCULATE_STOCKX_LIMITS" ||
     type === "REMOVE" ||
     type === "REMOVE_SECOND_BID"
   );
@@ -2235,6 +2250,128 @@ function normalizeNumericString(value) {
     .trim();
 }
 
+function extractStockXFeeBreakdown() {
+  const rawText = document.body?.innerText || "";
+
+  const lines = rawText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let subtotal = null;
+  let processingFee = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const label = normalizeText(lines[i]);
+
+    if (label === "subtotal" && lines[i + 1]) {
+      subtotal = parseMoneyValue(lines[i + 1]);
+    }
+
+    if (label.includes("processing fee") && lines[i + 1]) {
+      processingFee = parseMoneyValue(lines[i + 1]);
+    }
+  }
+
+  if (!Number.isFinite(subtotal) || !Number.isFinite(processingFee)) {
+    return null;
+  }
+
+  const shipping = 10.95;
+  const bidAmount = subtotal - shipping - processingFee;
+
+  if (!Number.isFinite(bidAmount) || bidAmount <= 0) {
+    return null;
+  }
+
+  return {
+    subtotal,
+    processingFee,
+    feePercent: processingFee / bidAmount
+  };
+}
+
+function calculateStockXBidFromBudget({
+  buyingPrice,
+  isMax,
+  feePercent,
+  vatRate,
+  vatFlow,
+  lojiqMargin
+}) {
+  let allowedSubtotal = Number(buyingPrice);
+
+  if (!Number.isFinite(allowedSubtotal)) return null;
+
+  if (lojiqMargin) {
+    allowedSubtotal *= isMax ? 0.95 : 0.85;
+  }
+
+  if (String(vatFlow || "").toUpperCase() === "VAT") {
+    allowedSubtotal = allowedSubtotal / (1 + Number(vatRate || 0));
+  }
+
+  const shipping = 10.95;
+  const fixedFee = 5.95;
+
+  const fixedFeeBid = allowedSubtotal - shipping - fixedFee;
+
+  let bid;
+
+  if (fixedFeeBid <= 69) {
+    bid = fixedFeeBid;
+  } else {
+    bid = (allowedSubtotal - shipping) / (1 + feePercent);
+  }
+
+  return Math.max(0, Math.floor(bid));
+}
+
+function calculateStockXLimitsFromCurrentPage() {
+  const fee = extractStockXFeeBreakdown();
+
+  if (!fee) {
+    return {
+      ok: false,
+      errorMessage: "Could not extract StockX subtotal / processing fee"
+    };
+  }
+
+  const startBid = calculateStockXBidFromBudget({
+    buyingPrice: currentTask.targetBuyingPrice,
+    isMax: false,
+    feePercent: fee.feePercent,
+    vatRate: currentTask.clientVatRate || 0,
+    vatFlow: currentTask.merchantStockxVatFlow,
+    lojiqMargin: currentTask.lojiqStockxMargin === true
+  });
+
+  const maxBid = calculateStockXBidFromBudget({
+    buyingPrice: currentTask.maximumBuyingPrice,
+    isMax: true,
+    feePercent: fee.feePercent,
+    vatRate: currentTask.clientVatRate || 0,
+    vatFlow: currentTask.merchantStockxVatFlow,
+    lojiqMargin: currentTask.lojiqStockxMargin === true
+  });
+
+  if (!Number.isFinite(startBid) || !Number.isFinite(maxBid)) {
+    return {
+      ok: false,
+      errorMessage: "Could not calculate StockX Start/Max bid"
+    };
+  }
+
+  return {
+    ok: true,
+    startBid,
+    maxBid,
+    feePercent: fee.feePercent,
+    processingFee: fee.processingFee,
+    subtotal: fee.subtotal
+  };
+}
+
 function fillBidPrice(attempt = 0) {
   if (!currentTask) {
     console.log("No currentTask for fillBidPrice");
@@ -2254,6 +2391,29 @@ function fillBidPrice(attempt = 0) {
   if (!input) {
     console.log("Bid input not found yet, retrying...");
     setTimeout(() => fillBidPrice(attempt + 1), 800);
+    return;
+  }
+
+  if (currentTask.type === "CALCULATE_STOCKX_LIMITS") {
+    const result = calculateStockXLimitsFromCurrentPage();
+  
+    if (!result.ok) {
+      reportTaskResult("STOCKX_LIMITS_CALCULATION_FAILED", {
+        errorMessage: result.errorMessage
+      });
+      return;
+    }
+  
+    console.log("🧠 StockX limits calculated:", result);
+  
+    reportTaskResult("STOCKX_LIMITS_CALCULATED", {
+      startBid: result.startBid,
+      maxBid: result.maxBid,
+      feePercent: result.feePercent,
+      processingFee: result.processingFee,
+      subtotal: result.subtotal
+    });
+  
     return;
   }
 
