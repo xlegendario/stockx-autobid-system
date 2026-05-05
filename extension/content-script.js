@@ -2372,6 +2372,140 @@ function calculateStockXLimitsFromCurrentPage() {
   };
 }
 
+function extractBuyNowPriceFromCurrentBuyPage() {
+  const rawText = document.body?.innerText || "";
+  const match = rawText.match(/€\s*([\d.,]+)\s*Buy Now/i);
+
+  if (match?.[1]) {
+    return parseMoneyValue(match[1]);
+  }
+
+  const lines = rawText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    if (normalizeText(lines[i]) === "buy now" && lines[i - 1]) {
+      return parseMoneyValue(lines[i - 1]);
+    }
+  }
+
+  return null;
+}
+
+function extractSubtotalFromCurrentBuyPage() {
+  const rawText = document.body?.innerText || "";
+  const lines = rawText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    if (normalizeText(lines[i]) === "subtotal" && lines[i + 1]) {
+      return parseMoneyValue(lines[i + 1]);
+    }
+  }
+
+  const match = rawText.match(/Subtotal\s*€\s*([\d.,]+)/i);
+  if (match?.[1]) return parseMoneyValue(match[1]);
+
+  return null;
+}
+
+function handleStockXLimitsCalculation(testBid) {
+  const subtotal = extractSubtotalFromCurrentBuyPage();
+
+  if (!Number.isFinite(subtotal)) {
+    reportTaskResult("STOCKX_LIMITS_CALCULATION_FAILED", {
+      errorMessage: "Could not extract subtotal after test bid"
+    });
+    return;
+  }
+
+  const shipping = 10.95;
+  const processingFee = subtotal - testBid - shipping;
+
+  if (!Number.isFinite(processingFee) || processingFee < 0) {
+    reportTaskResult("STOCKX_LIMITS_CALCULATION_FAILED", {
+      errorMessage: "Invalid processing fee calculated from subtotal"
+    });
+    return;
+  }
+
+  const feePercent = processingFee / testBid;
+
+  const startBid = calculateStockXBidFromBudget({
+    buyingPrice: currentTask.targetBuyingPrice,
+    isMax: false,
+    feePercent,
+    vatRate: currentTask.clientVatRate || 0,
+    vatFlow: currentTask.merchantStockxVatFlow,
+    lojiqMargin: currentTask.lojiqStockxMargin === true
+  });
+
+  const maxBid = calculateStockXBidFromBudget({
+    buyingPrice: currentTask.maximumBuyingPrice,
+    isMax: true,
+    feePercent,
+    vatRate: currentTask.clientVatRate || 0,
+    vatFlow: currentTask.merchantStockxVatFlow,
+    lojiqMargin: currentTask.lojiqStockxMargin === true
+  });
+
+  if (!Number.isFinite(startBid) || !Number.isFinite(maxBid)) {
+    reportTaskResult("STOCKX_LIMITS_CALCULATION_FAILED", {
+      errorMessage: "Could not calculate Start/Max StockX Bid"
+    });
+    return;
+  }
+
+  reportTaskResult("STOCKX_LIMITS_CALCULATED", {
+    startBid,
+    maxBid,
+    testBid,
+    subtotal,
+    processingFee,
+    feePercent
+  });
+}
+
+function calculateStockXBidFromBudget({
+  buyingPrice,
+  isMax,
+  feePercent,
+  vatRate,
+  vatFlow,
+  lojiqMargin
+}) {
+  let allowedSubtotal = Number(buyingPrice);
+
+  if (!Number.isFinite(allowedSubtotal)) return null;
+
+  if (lojiqMargin) {
+    allowedSubtotal *= isMax ? 0.95 : 0.85;
+  }
+
+  if (String(vatFlow || "").toUpperCase() === "VAT") {
+    allowedSubtotal = allowedSubtotal / (1 + Number(vatRate || 0));
+  }
+
+  const shipping = 10.95;
+  const fixedFee = 5.95;
+
+  const fixedFeeBid = allowedSubtotal - shipping - fixedFee;
+
+  let bid;
+
+  if (fixedFeeBid <= 69) {
+    bid = fixedFeeBid;
+  } else {
+    bid = (allowedSubtotal - shipping) / (1 + feePercent);
+  }
+
+  return Math.max(0, Math.floor(bid));
+}
+
 function fillBidPrice(attempt = 0) {
   if (!currentTask) {
     console.log("No currentTask for fillBidPrice");
@@ -2417,7 +2551,23 @@ function fillBidPrice(attempt = 0) {
     return;
   }
 
-  const bidValue = formatBidValue(currentTask.maxBid);
+  let bidValue;
+
+  if (currentTask.type === "CALCULATE_STOCKX_LIMITS") {
+    const buyNowPrice = extractBuyNowPriceFromCurrentBuyPage();
+  
+    if (!Number.isFinite(buyNowPrice)) {
+      console.log("Could not read Buy Now price for StockX limits calculation");
+      reportTaskResult("STOCKX_LIMITS_CALCULATION_FAILED", {
+        errorMessage: "Could not read Buy Now price for StockX limits calculation"
+      });
+      return;
+    }
+  
+    bidValue = formatBidValue(Math.max(1, buyNowPrice - 1));
+  } else {
+    bidValue = formatBidValue(currentTask.maxBid);
+  }
 
   if (!bidValue) {
     console.log("No valid maxBid available on task");
@@ -2472,6 +2622,14 @@ function fillBidPrice(attempt = 0) {
     if (await stopIfNeeded("after fillBidPrice")) return;
 
     console.log("✅ Bid input matches expected value");
+
+    if (currentTask.type === "CALCULATE_STOCKX_LIMITS") {
+      setTimeout(() => {
+        handleStockXLimitsCalculation(Number(bidValue));
+      }, 1200);
+      return;
+    }
+    
     waitForReviewBidEnabled();
   }, 1200);
 }
