@@ -1,6 +1,32 @@
 console.log("StockX Autobid content script loaded");
 
 let hasAuthErrorBeenReported = false;
+const originalFetch = window.fetch;
+
+window.fetch = async (...args) => {
+  const response = await originalFetch(...args);
+
+  try {
+    const url = String(response.url || "");
+
+    if (
+      url.includes("/api/graphql") &&
+      response.status === 401 &&
+      !hasAuthErrorBeenReported
+    ) {
+      console.warn("🚨 StockX GraphQL 401 detected");
+      hasAuthErrorBeenReported = true;
+
+      chrome.runtime.sendMessage({
+        type: "AUTH_REQUIRED"
+      });
+    }
+  } catch (err) {
+    console.warn("Auth 401 detector failed:", err);
+  }
+
+  return response;
+};
 
 async function shouldForceStopRunner() {
   const data = await chrome.storage.local.get(["forceStop"]);
@@ -21,7 +47,6 @@ window.addEventListener("load", async () => {
 
   const stored = await chrome.storage.local.get("currentTask");
   currentTask = stored.currentTask || null;
-  if (detectUnauthorizedState()) return;
 
   if (
     currentTask &&
@@ -262,23 +287,6 @@ async function verifyProductPageSkuOrFail(attempt = 0) {
   return false;
 }
 
-function detectUnauthorizedState() {
-  if (hasAuthErrorBeenReported) return false;
-
-  const bodyText = String(document.body?.innerText || "").toLowerCase();
-
-  if (
-    bodyText.includes("unauthorized") ||
-  ) {
-    console.warn("🚨 Unauthorized state detected via DOM");
-    hasAuthErrorBeenReported = true;
-    handleAuthError();
-    return true;
-  }
-
-  return false;
-}
-
 async function handleAuthError() {
   console.error("🚨 Handling AUTH_REQUIRED state");
 
@@ -299,7 +307,6 @@ async function handleAuthError() {
 
 async function handleTask() {
   if (!currentTask) return;
-  if (detectUnauthorizedState()) return;
 
   if (await stopIfNeeded("handleTask")) return;
 
