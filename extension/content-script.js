@@ -1,6 +1,6 @@
 console.log("StockX Autobid content script loaded");
 
-let currentTask = null;
+let hasAuthErrorBeenReported = false;
 
 async function shouldForceStopRunner() {
   const data = await chrome.storage.local.get(["forceStop"]);
@@ -21,6 +21,7 @@ window.addEventListener("load", async () => {
 
   const stored = await chrome.storage.local.get("currentTask");
   currentTask = stored.currentTask || null;
+  if (detectUnauthorizedState()) return;
 
   if (
     currentTask &&
@@ -261,8 +262,46 @@ async function verifyProductPageSkuOrFail(attempt = 0) {
   return false;
 }
 
+function detectUnauthorizedState() {
+  if (hasAuthErrorBeenReported) return false;
+
+  const bodyText = String(document.body?.innerText || "").toLowerCase();
+
+  if (
+    bodyText.includes("unauthorized") ||
+    bodyText.includes("please log in") ||
+    bodyText.includes("sign in")
+  ) {
+    console.warn("🚨 Unauthorized state detected via DOM");
+    hasAuthErrorBeenReported = true;
+    handleAuthError();
+    return true;
+  }
+
+  return false;
+}
+
+async function handleAuthError() {
+  console.error("🚨 Handling AUTH_REQUIRED state");
+
+  try {
+    if (currentTask?.recordId) {
+      await reportTaskResult("AUTH_REQUIRED", {
+        errorMessage: "StockX session unauthorized / temporary auth failure"
+      });
+    }
+  } catch (e) {
+    console.error("❌ Failed to report AUTH_REQUIRED:", e);
+  }
+
+  chrome.runtime.sendMessage({
+    type: "AUTH_REQUIRED"
+  });
+}
+
 async function handleTask() {
   if (!currentTask) return;
+  if (detectUnauthorizedState()) return;
 
   if (await stopIfNeeded("handleTask")) return;
 
