@@ -269,8 +269,6 @@ function detectUnauthorizedState() {
 
   if (
     bodyText.includes("unauthorized") ||
-    bodyText.includes("please log in") ||
-    bodyText.includes("sign in")
   ) {
     console.warn("🚨 Unauthorized state detected via DOM");
     hasAuthErrorBeenReported = true;
