@@ -2528,29 +2528,6 @@ function fillBidPrice(attempt = 0) {
     return;
   }
 
-  if (currentTask.type === "CALCULATE_STOCKX_LIMITS") {
-    const result = calculateStockXLimitsFromCurrentPage();
-  
-    if (!result.ok) {
-      reportTaskResult("STOCKX_LIMITS_CALCULATION_FAILED", {
-        errorMessage: result.errorMessage
-      });
-      return;
-    }
-  
-    console.log("🧠 StockX limits calculated:", result);
-  
-    reportTaskResult("STOCKX_LIMITS_CALCULATED", {
-      startBid: result.startBid,
-      maxBid: result.maxBid,
-      feePercent: result.feePercent,
-      processingFee: result.processingFee,
-      subtotal: result.subtotal
-    });
-  
-    return;
-  }
-
   let bidValue;
 
   if (currentTask.type === "CALCULATE_STOCKX_LIMITS") {
