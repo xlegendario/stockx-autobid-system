@@ -130,6 +130,35 @@ function parseMoney(raw) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getTargetBuyingPrice(fields) {
+  return parseMoney(fields["Target Buying Price"]);
+}
+
+function getMaximumBuyingPrice(fields) {
+  return parseMoney(fields["Maximum Buying Price"]);
+}
+
+function getClientVatRate(fields) {
+  const raw = normalizeLookup(fields["Client VAT Rate"]);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getMerchantStockxVatFlow(fields) {
+  return String(
+    normalizeLookup(
+      fields["Merchant StockX VAT Flow"] ??
+      fields["Client StockX VAT Flow"] ??
+      ""
+    ) || ""
+  ).trim().toUpperCase();
+}
+
+function getLojiqStockxMargin(fields) {
+  const raw = normalizeLookup(fields["Lojiq Stockx Margin?"]);
+  return raw === true || raw === 1 || raw === "1" || raw === "true";
+}
+
 function getMaxBid(fields) {
   return parseMoney(
     fields["Current StockX Bid"] ??
@@ -540,6 +569,47 @@ export async function buildTask(
     const size = fields["Size"];
     const maxBid = getCurrentStockXBid(fields);
 
+    const startBid = parseMoney(fields["Start StockX Bid"]);
+    const maxStockXBid = parseMoney(fields["Max StockX Bid"]);
+    
+    const needsLimitCalculation =
+      !Number.isFinite(startBid) ||
+      !Number.isFinite(maxStockXBid);
+
+    if (needsLimitCalculation) {
+      let stockxUrl = fields["StockX URL"] || null;
+    
+      if (!stockxUrl) {
+        try {
+          const resolved = await resolveStockxUrlBySku(sku);
+          stockxUrl = resolved.stockxUrl;
+        } catch {
+          stockxUrl = null;
+        }
+      }
+    
+      await updateOrder(chosenPlace.id, {
+        LastAction: "BID_LIMITS_IN_PROGRESS",
+        LastSyncAt: new Date().toISOString(),
+        ErrorMessage: ""
+      });
+    
+      return {
+        type: "CALCULATE_STOCKX_LIMITS",
+        recordId: chosenPlace.id,
+        sku,
+        size,
+    
+        targetBuyingPrice: getTargetBuyingPrice(fields),
+        maximumBuyingPrice: getMaximumBuyingPrice(fields),
+        clientVatRate: getClientVatRate(fields),
+        merchantStockxVatFlow: getMerchantStockxVatFlow(fields),
+        lojiqStockxMargin: getLojiqStockxMargin(fields),
+    
+        stockxUrl
+      };
+    }
+    
     if (!Number.isFinite(maxBid)) {
       console.log("❌ Skipping PLACE_OR_UPDATE: invalid Current StockX Bid", {
         recordId: chosenPlace.id,
