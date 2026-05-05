@@ -566,6 +566,23 @@ export async function buildTask(
       LastSyncAt: new Date().toISOString(),
       ErrorMessage: ""
     });
+
+    const startBid = fields["Start StockX Bid"];
+    const maxBidField = fields["Max StockX Bid"];
+    
+    const needsCalculation =
+      !Number.isFinite(Number(startBid)) ||
+      !Number.isFinite(Number(maxBidField));
+    
+    if (needsCalculation) {
+      return {
+        type: "CALCULATE_STOCKX_LIMITS",
+        recordId: chosenPlace.id,
+        sku,
+        size,
+        stockxUrl
+      };
+    }
   
     return {
       type: "PLACE_OR_UPDATE",
