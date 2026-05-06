@@ -103,6 +103,42 @@ function needsBid(fields) {
   return Number(fields["Needs StockX Bid"]) === 1;
 }
 
+function needsBidCalculation(fields) {
+  return Number(fields["Needs Bid Calculation"]) === 1;
+}
+
+function getTargetBuyingPrice(fields) {
+  return parseMoney(fields["Target Buying Price"]);
+}
+
+function getMaximumBuyingPrice(fields) {
+  return parseMoney(fields["Maximum Buying Price"]);
+}
+
+function getClientVatRate(fields) {
+  const raw = fields["Client VAT Rate"];
+  const parsed = Number(normalizeLookup(raw));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getMerchantVatFlow(fields) {
+  return String(normalizeLookup(fields["Merchant StockX VAT Flow"]) || "").trim().toUpperCase();
+}
+
+function getLojiqMargin(fields) {
+  const raw = normalizeLookup(fields["Lojiq Stockx Margin?"]);
+  return raw === true || raw === 1 || raw === "1" || raw === "true";
+}
+
+function hasRequiredCalculationInputs(fields) {
+  return (
+    Number.isFinite(getTargetBuyingPrice(fields)) &&
+    Number.isFinite(getMaximumBuyingPrice(fields)) &&
+    Number.isFinite(getClientVatRate(fields)) &&
+    ["VAT", "MARGIN"].includes(getMerchantVatFlow(fields))
+  );
+}
+
 function needsBidUpdate(fields) {
   return Number(fields["Needs StockX Bid Update"]) === 1;
 }
@@ -288,6 +324,8 @@ export async function buildTask(
       }
     }
 
+    const canCalculateLimits = needsBidCalculation(f);
+
     const canPlaceOrUpdate = needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
 
     const canSecondFlow =
@@ -295,7 +333,7 @@ export async function buildTask(
       isSecondBidPlaceOrUpdateCandidate(f) ||
       isSecondBidRemoveCandidate(f);
 
-    if (!canPlaceOrUpdate && !needsRemoval(f) && !canSecondFlow) return false;
+    if (!canCalculateLimits && !canPlaceOrUpdate && !needsRemoval(f) && !canSecondFlow) return false;
 
     // Block alleen echte nieuwe placements
     if (canPlaceOrUpdate && !hasBidPlaced(f)) {
@@ -320,6 +358,7 @@ export async function buildTask(
     group.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime));
   });
 
+  const calculationCandidates = [];
   const newPlaceCandidates = [];
   const updatePlaceCandidates = [];
   const removeCandidates = [];
@@ -346,6 +385,14 @@ export async function buildTask(
     );
     if (firstSecondRemove) {
       secondBidRemoveCandidates.push(firstSecondRemove);
+      continue;
+    }
+
+    const firstCalculation = group.find((record) =>
+      needsBidCalculation(record.fields)
+    );
+    if (firstCalculation) {
+      calculationCandidates.push(firstCalculation);
       continue;
     }
 
@@ -517,6 +564,53 @@ export async function buildTask(
 
   if (chosenSecondRemove) {
     return await buildSecondBidRemoveTask(chosenSecondRemove);
+  }
+
+  const chosenCalculation =
+    calculationCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+
+  if (chosenCalculation) {
+    const fields = chosenCalculation.fields;
+    const sku = getSku(fields);
+    const size = fields["Size"];
+
+    let stockxUrl = fields["StockX URL"] || null;
+
+    if (!stockxUrl) {
+      try {
+        const resolved = await resolveStockxUrlBySku(sku);
+        stockxUrl = resolved.stockxUrl;
+      } catch (err) {
+        console.error("❌ Failed to resolve StockX URL for limit calculation", {
+          sku,
+          error: err.message
+        });
+        stockxUrl = null;
+      }
+    }
+
+    if (!hasRequiredCalculationInputs(fields)) {
+      await updateOrder(chosenCalculation.id, {
+        LastAction: "STOCKX_LIMITS_CALCULATION_FAILED",
+        LastSyncAt: new Date().toISOString(),
+        ErrorMessage: "Missing Target Buying Price / Maximum Buying Price / Client VAT Rate / Merchant StockX VAT Flow"
+      });
+
+      return null;
+    }
+
+    return {
+      type: "CALCULATE_STOCKX_LIMITS",
+      recordId: chosenCalculation.id,
+      sku,
+      size,
+      stockxUrl,
+      targetBuyingPrice: getTargetBuyingPrice(fields),
+      maximumBuyingPrice: getMaximumBuyingPrice(fields),
+      clientVatRate: getClientVatRate(fields),
+      merchantVatFlow: getMerchantVatFlow(fields),
+      lojiqMargin: getLojiqMargin(fields)
+    };
   }
 
   const chosenInitialSecondFlow =
