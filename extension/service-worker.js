@@ -10,7 +10,6 @@ const ORDER_PLACED_NEXT_TASK_DELAY_MS = 8000;
 const BID_RESULT_NEXT_TASK_DELAY_MS = 4000;
 const TASK_TIMEOUT_MS = 120000; // 2 minuten
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
-const AUTH_RETRY_DELAY_MS = 30000;
 
 let currentTaskStartedAt = null;
 
@@ -165,18 +164,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "AUTH_REQUIRED") {
-    handleAuthRequired()
-      .then((result) => sendResponse(result))
-      .catch((err) => sendResponse({ ok: false, error: err.message }));
-  
-    return true;
-  }
-
   if (message.type === "GET_RUNNER_STATUS") {
     loadState().then(async () => {
       const data = await chrome.storage.local.get(["forceStop"]);
-  
+
       sendResponse({
         ok: true,
         isRunnerEnabled,
@@ -184,30 +175,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         forceStop: data.forceStop === true
       });
     });
-  
+
     return true;
   }
 
   if (message.type === "WAKE_RUNNER") {
     runLoop().catch(async (err) => {
       console.error("WAKE_RUNNER loop error:", err);
-  
+
       await clearCurrentTaskState();
-  
+
       if (isRunnerEnabled) {
         await scheduleNextRun(ERROR_RETRY_DELAY_MS);
       }
     });
-  
+
     sendResponse({ ok: true, message: "Runner wake requested" });
     return true;
   }
-  
+
   if (message.type === "TASK_COMPLETED") {
     submitTaskResult(message.payload)
       .then(async (result) => {
         await clearCurrentTaskState();
-  
+
         if (isRunnerEnabled) {
           try {
             const action = message.payload?.action;
@@ -217,13 +208,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               : isBidResultAction(action)
                 ? BID_RESULT_NEXT_TASK_DELAY_MS
                 : 1000;
-  
+
             await scheduleNextRun(delay);
-  
+
             setTimeout(() => {
               runLoop().catch(async (err) => {
                 console.error("Runner loop error after task completion:", err);
-  
+
                 clearCurrentTaskState().then(async () => {
                   if (isRunnerEnabled) {
                     await scheduleNextRun(ERROR_RETRY_DELAY_MS);
@@ -234,25 +225,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } catch (err) {
             console.error("Runner loop scheduling error after success:", err);
             await clearCurrentTaskState();
-  
+
             if (isRunnerEnabled) {
               await scheduleNextRun(ERROR_RETRY_DELAY_MS);
             }
           }
         }
-  
+
         sendResponse({ ok: true, result });
       })
       .catch(async (err) => {
         await clearCurrentTaskState();
-  
+
         if (isRunnerEnabled) {
           await scheduleNextRun(ERROR_RETRY_DELAY_MS);
         }
-  
+
         sendResponse({ ok: false, error: err.message });
       });
-  
+
     return true;
   }
 });
@@ -357,32 +348,6 @@ async function forceStopRunner() {
   };
 }
 
-async function handleAuthRequired() {
-  console.warn("🚨 AUTH_REQUIRED → cooling down runner");
-
-  await chrome.alarms.clear(RUNNER_ALARM_NAME);
-  await clearCurrentTaskState();
-
-  isRunnerEnabled = true;
-
-  await chrome.storage.local.set({
-    runnerEnabled: true,
-    forceStop: false,
-    currentTask: null,
-    currentTaskStartedAt: null
-  });
-
-  await scheduleNextRun(AUTH_RETRY_DELAY_MS);
-
-  return {
-    ok: true,
-    message: "Runner cooldown after AUTH_REQUIRED",
-    isRunnerEnabled: true,
-    isTaskInProgress: false,
-    retryInMs: AUTH_RETRY_DELAY_MS
-  };
-}
-
 async function runLoop() {
   if (isRunLoopActive) {
     console.log("⏳ runLoop already active, skipping duplicate trigger");
@@ -403,9 +368,9 @@ async function runLoop() {
 
     await recoverIfBrokenTaskState();
     await recoverIfTaskTimedOut();
-    
+
     await loadState();
-    
+
     if (isTaskInProgress) {
       console.log("⏳ Task still in progress, retrying soon...");
       await scheduleNextRun(2000);
@@ -470,20 +435,20 @@ async function handleSingleTask() {
   const taskData = await fetchNextTask();
 
   await loadState();
-  
+
   const stopData = await chrome.storage.local.get(["forceStop"]);
-  
+
   if (!isRunnerEnabled || stopData.forceStop === true) {
     console.log("🛑 Runner stopped after fetchNextTask; aborting task open");
     await clearCurrentTaskState();
-  
+
     return {
       ok: true,
       message: "Runner stopped after fetch",
       task: null
     };
   }
-  
+
   if (!taskData.task) {
     return {
       ok: true,
@@ -491,7 +456,7 @@ async function handleSingleTask() {
       task: null
     };
   }
-  
+
   const task = taskData.task;
 
   isTaskInProgress = true;
