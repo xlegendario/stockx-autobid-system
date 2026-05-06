@@ -2109,7 +2109,7 @@ function calculateStockXBidFromBudget({
   if (!Number.isFinite(allowedSubtotal)) return null;
 
   if (lojiqMargin) {
-    allowedSubtotal *= isMax ? 0.95 : 0.85;
+    allowedSubtotal *= isMax ? 0.90 : 0.85;
   }
 
   if (String(vatFlow || "").toUpperCase() === "VAT") {
