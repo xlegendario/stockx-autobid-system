@@ -219,8 +219,9 @@ export async function submitTaskResult(recordId, payload) {
       "Second Bid Flow Status": "SECOND_BID_REMOVED",
       SecondLastAction: "SECOND_BID_REMOVED",
       LastSyncAt: now,
-      ErrorMessage: payload.errorMessage || ""
-      ErrorMessage: payload.errorMessage || "Second bid missing on StockX and no second order found"
+      ErrorMessage:
+        payload.errorMessage ||
+        "Second bid missing on StockX and no second order found"
     });
   }
 
