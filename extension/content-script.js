@@ -293,9 +293,7 @@ function detectUnauthorizedState() {
 
   const bodyText = String(document.body?.innerText || "").toLowerCase();
 
-  if (
-    bodyText.includes("unauthorized") ||
-  ) {
+  if (bodyText.includes("unauthorized")) {
     console.warn("🚨 Unauthorized state detected via DOM");
     hasAuthErrorBeenReported = true;
     handleAuthError();
