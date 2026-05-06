@@ -1882,13 +1882,15 @@ function goToOfferPage() {
   window.location.href = offerUrl;
 }
 
-function findBuyNowSizeTile(targetSize) {
+function findTargetSizeTile(targetSize) {
   const normalizedTarget = normalizeText(targetSize);
+  const expectedSizeText = `eu ${normalizedTarget}`;
 
   const candidates = Array.from(
-    document.querySelectorAll("button, [role='button'], li, div")
+    document.querySelectorAll("button, [role='button'], li")
   ).filter((el) => {
-    const text = normalizeText(el.innerText);
+    const rawText = String(el.innerText || "").trim();
+    const text = normalizeText(rawText);
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
 
@@ -1896,23 +1898,37 @@ function findBuyNowSizeTile(targetSize) {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
-    const hasSize =
-      text.includes(`eu ${normalizedTarget}`) ||
-      text === normalizedTarget ||
-      text.includes(` ${normalizedTarget} `);
+    // voorkom dat we hele grid/container pakken
+    if (rawText.length > 80) return false;
 
-    const hasPrice = /€\s*\d+/.test(el.innerText || "");
+    const lines = rawText
+      .split("\n")
+      .map((line) => normalizeText(line))
+      .filter(Boolean);
 
-    return hasSize && hasPrice;
+    return lines.some((line) => line === expectedSizeText);
   });
 
   if (candidates.length === 0) return null;
 
   return candidates.sort((a, b) => {
-    const aText = normalizeText(a.innerText);
-    const bText = normalizeText(b.innerText);
-    return aText.length - bText.length;
+    const aRect = a.getBoundingClientRect();
+    const bRect = b.getBoundingClientRect();
+
+    return (aRect.width * aRect.height) - (bRect.width * bRect.height);
   })[0];
+}
+
+function findBuyNowSizeTile(targetSize) {
+  const tile = findTargetSizeTile(targetSize);
+
+  if (!tile) return null;
+
+  const buyNowPrice = extractBuyNowFromSizeTile(tile);
+
+  if (!Number.isFinite(buyNowPrice)) return null;
+
+  return tile;
 }
 
 function extractBuyNowFromSizeTile(tile) {
@@ -2257,7 +2273,7 @@ function handleCalculateStockXLimitsPage(attempt = 0) {
   }
 
   if (attempt > 20) {
-    reportCalculationFailure("could not read Buy Now price");
+    reportCalculationFailure("could not find target size tile");
     return;
   }
 
@@ -2268,26 +2284,27 @@ function handleCalculateStockXLimitsPage(attempt = 0) {
     return;
   }
 
-  const tile = findBuyNowSizeTile(currentTask.size);
-  const buyNowPrice = extractBuyNowFromSizeTile(tile);
+  const tile = findTargetSizeTile(currentTask.size);
 
-  if (tile && Number.isFinite(buyNowPrice)) {
-    console.log("🧮 Calculation flow: clicking size tile", {
-      size: currentTask.size,
-      buyNowPrice
-    });
-
-    clickElement(tile);
-
-    setTimeout(() => {
-      calculateLimitsOnBidInputScreen(0, buyNowPrice);
-    }, 1500);
-
+  if (!tile) {
+    console.log("Calculation flow: exact target size tile not found yet, retrying...");
+    setTimeout(() => handleCalculateStockXLimitsPage(attempt + 1), 800);
     return;
   }
 
-  console.log("Calculation flow: size tile / Buy Now price not found yet, retrying...");
-  setTimeout(() => handleCalculateStockXLimitsPage(attempt + 1), 800);
+  const buyNowPrice = extractBuyNowFromSizeTile(tile);
+
+  console.log("🧮 Calculation flow: clicking exact target size tile", {
+    size: currentTask.size,
+    buyNowPrice: Number.isFinite(buyNowPrice) ? buyNowPrice : null,
+    fallbackTestBid: Number.isFinite(buyNowPrice) ? null : 200
+  });
+
+  clickElement(tile);
+
+  setTimeout(() => {
+    calculateLimitsOnBidInputScreen(0, Number.isFinite(buyNowPrice) ? buyNowPrice : null);
+  }, 1500);
 }
 
 function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
@@ -2328,15 +2345,16 @@ function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
     }
   }
 
-  if (!Number.isFinite(buyNowPrice)) {
-    reportCalculationFailure("could not read Buy Now price");
-    return;
-  }
+  const testBidSource = Number.isFinite(buyNowPrice)
+    ? "BUY_NOW_MINUS_1"
+    : "FALLBACK_200_NO_BUY_NOW";
 
-  const testBid = Math.floor(buyNowPrice - 1);
+  const testBid = Number.isFinite(buyNowPrice)
+    ? Math.floor(buyNowPrice - 1)
+    : 200;
 
   if (!Number.isFinite(testBid) || testBid <= 0) {
-    reportCalculationFailure("could not read Buy Now price");
+    reportCalculationFailure("invalid test bid");
     return;
   }
 
@@ -2348,11 +2366,11 @@ function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
   setBidInputValueOnly(input, testBid);
 
   setTimeout(() => {
-    verifyCalculationBidInputValue(0, testBid);
+    verifyCalculationBidInputValue(0, testBid, testBidSource);
   }, 1200);
 }
 
-function verifyCalculationBidInputValue(attempt = 0, testBid) {
+function verifyCalculationBidInputValue(attempt = 0, testBid, testBidSource = null) {
   if (!currentTask) return;
 
   if (currentTask.type !== "CALCULATE_STOCKX_LIMITS") {
@@ -2370,7 +2388,7 @@ function verifyCalculationBidInputValue(attempt = 0, testBid) {
   if (!input) {
     console.log("Calculation flow: bid input disappeared after fill, retrying...");
     setTimeout(() => {
-      verifyCalculationBidInputValue(attempt + 1, testBid);
+      verifyCalculationBidInputValue(attempt + 1, testBid, testBidSource);
     }, 1000);
     return;
   }
@@ -2388,7 +2406,7 @@ function verifyCalculationBidInputValue(attempt = 0, testBid) {
     setBidInputValueOnly(input, expected);
 
     setTimeout(() => {
-      verifyCalculationBidInputValue(attempt + 1, testBid);
+      verifyCalculationBidInputValue(attempt + 1, testBid, testBidSource);
     }, 1200);
 
     return;
@@ -2399,11 +2417,11 @@ function verifyCalculationBidInputValue(attempt = 0, testBid) {
   });
 
   setTimeout(() => {
-    waitForSubtotalAndReportStockXLimits(0, testBid);
+    waitForSubtotalAndReportStockXLimits(0, testBid, testBidSource);
   }, 1500);
 }
 
-function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid) {
+function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid, testBidSource = null) {
   if (!currentTask) return;
 
   if (currentTask.type !== "CALCULATE_STOCKX_LIMITS") {
@@ -2482,6 +2500,7 @@ function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid) {
     startBid,
     maxBid,
     testBid,
+    testBidSource,
     subtotal,
     processingFee,
     feePercent
