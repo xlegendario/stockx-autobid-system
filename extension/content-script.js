@@ -2330,7 +2330,10 @@ function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
     return;
   }
 
-  let buyNowPrice = Number(knownBuyNowPrice);
+  let buyNowPrice =
+    knownBuyNowPrice === null || knownBuyNowPrice === undefined
+      ? null
+      : Number(knownBuyNowPrice);
 
   if (!Number.isFinite(buyNowPrice)) {
     buyNowPrice = extractBuyNowFromSizeTile(findBuyNowSizeTile(currentTask.size));
