@@ -107,6 +107,11 @@ window.addEventListener("load", async () => {
     setTimeout(async () => {
       if (await stopIfNeeded("page load buy page")) return;
 
+      if (currentTask?.type === "CALCULATE_STOCKX_LIMITS") {
+        handleCalculateStockXLimitsPage();
+        return;
+      }
+
       if (currentTask?.type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK") {
         handleInitialSecondBidBuyCheckPage();
         return;
@@ -273,6 +278,16 @@ async function handleTask() {
     size: currentTask?.size
   });
 
+  if (currentTask.type === "CALCULATE_STOCKX_LIMITS") {
+    if (window.location.pathname.includes("/buy/")) {
+      handleCalculateStockXLimitsPage();
+      return;
+    }
+
+    goToOfferPage();
+    return;
+  }
+
   if (currentTask.type === "PLACE_OR_UPDATE") {
     if (window.location.pathname.includes("/buy/")) {
       handleBuyPage();
@@ -411,6 +426,7 @@ function needsProductPageTask(type) {
     type === "PLACE_OR_UPDATE" ||
     type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK" ||
     type === "PLACE_SECOND_BID" ||
+    type === "CALCULATE_STOCKX_LIMITS" ||
     type === "REMOVE" ||
     type === "REMOVE_SECOND_BID"
   );
@@ -427,6 +443,10 @@ function getSkuTextFromTask() {
 }
 
 function getSearchFallbackFailureAction() {
+  if (currentTask?.type === "CALCULATE_STOCKX_LIMITS") {
+    return "STOCKX_LIMITS_CALCULATION_FAILED";
+  }
+
   if (currentTask?.type === "REMOVE_SECOND_BID") return "SECOND_BID_REMOVE_FAILED";
   if (currentTask?.type === "PLACE_SECOND_BID") return "SECOND_BID_FAILED";
   if (currentTask?.type === "REMOVE") return "BID_REMOVE_FAILED";
@@ -2068,6 +2088,353 @@ function waitForReviewOrderEnabledAfterBuyNowOption(attempt = 0) {
   setTimeout(() => {
     clickConfirmBid();
   }, 2500);
+}
+
+function reportCalculationFailure(errorMessage) {
+  reportTaskResult("STOCKX_LIMITS_CALCULATION_FAILED", {
+    errorMessage
+  });
+}
+
+function calculateStockXBidFromBudget({
+  buyingPrice,
+  isMax,
+  feePercent,
+  vatRate,
+  vatFlow,
+  lojiqMargin
+}) {
+  let allowedSubtotal = Number(buyingPrice);
+
+  if (!Number.isFinite(allowedSubtotal)) return null;
+
+  if (lojiqMargin) {
+    allowedSubtotal *= isMax ? 0.95 : 0.85;
+  }
+
+  if (String(vatFlow || "").toUpperCase() === "VAT") {
+    allowedSubtotal = allowedSubtotal / (1 + Number(vatRate || 0));
+  }
+
+  const shipping = 10.95;
+  const fixedFee = 5.95;
+
+  const fixedFeeBid = allowedSubtotal - shipping - fixedFee;
+
+  let bid;
+
+  if (fixedFeeBid <= 69) {
+    bid = fixedFeeBid;
+  } else {
+    bid = (allowedSubtotal - shipping) / (1 + feePercent);
+  }
+
+  return Math.max(0, Math.floor(bid));
+}
+
+function setBidInputValueOnly(input, value) {
+  const bidValue = formatBidValue(value);
+
+  input.focus();
+
+  const nativeSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value"
+  )?.set;
+
+  if (nativeSetter) {
+    nativeSetter.call(input, "");
+  } else {
+    input.value = "";
+  }
+
+  input.dispatchEvent(new InputEvent("input", {
+    bubbles: true,
+    inputType: "deleteContentBackward",
+    data: null
+  }));
+
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+
+  if (nativeSetter) {
+    nativeSetter.call(input, bidValue);
+  } else {
+    input.value = bidValue;
+  }
+
+  input.dispatchEvent(new InputEvent("input", {
+    bubbles: true,
+    inputType: "insertText",
+    data: bidValue
+  }));
+
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function extractSubtotalFromPage() {
+  const raw = document.body?.innerText || "";
+
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < lines.length - 1; i++) {
+    const label = normalizeText(lines[i]);
+
+    if (label === "subtotal") {
+      const candidate = lines[i + 1];
+      const match = candidate.match(/€\s*([\d.,]+)/);
+
+      if (match?.[1]) {
+        const parsed = parseMoneyValue(match[1]);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+  }
+
+  const fallbackMatch = raw.match(/Subtotal[\s\S]{0,80}?€\s*([\d.,]+)/i);
+
+  if (fallbackMatch?.[1]) {
+    const parsed = parseMoneyValue(fallbackMatch[1]);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+function validateCalculationInputs() {
+  const targetBuyingPrice = Number(currentTask?.targetBuyingPrice);
+  const maximumBuyingPrice = Number(currentTask?.maximumBuyingPrice);
+  const vatRate = Number(currentTask?.clientVatRate);
+  const vatFlow = String(currentTask?.merchantVatFlow || "").toUpperCase();
+
+  if (!Number.isFinite(targetBuyingPrice)) {
+    return "missing Target Buying Price";
+  }
+
+  if (!Number.isFinite(maximumBuyingPrice)) {
+    return "missing Maximum Buying Price";
+  }
+
+  if (!Number.isFinite(vatRate)) {
+    return "missing Client VAT Rate";
+  }
+
+  if (!["VAT", "MARGIN"].includes(vatFlow)) {
+    return "missing Merchant StockX VAT Flow";
+  }
+
+  return null;
+}
+
+function findVisibleReviewButtonForSafetyCheck() {
+  return Array.from(document.querySelectorAll("button")).find((btn) => {
+    const text = normalizeText(btn.innerText || "");
+    const rect = btn.getBoundingClientRect();
+    const style = window.getComputedStyle(btn);
+
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    return text.includes("review bid") || text.includes("review order");
+  });
+}
+
+function handleCalculateStockXLimitsPage(attempt = 0) {
+  if (!currentTask) return;
+
+  if (currentTask.type !== "CALCULATE_STOCKX_LIMITS") {
+    console.log("Calculation flow skipped: wrong task type", currentTask.type);
+    return;
+  }
+
+  const inputError = validateCalculationInputs();
+
+  if (inputError) {
+    reportCalculationFailure(inputError);
+    return;
+  }
+
+  if (attempt > 20) {
+    reportCalculationFailure("could not read Buy Now price");
+    return;
+  }
+
+  const priceInput = findBidInput();
+
+  if (priceInput) {
+    calculateLimitsOnBidInputScreen(0, null);
+    return;
+  }
+
+  const tile = findBuyNowSizeTile(currentTask.size);
+  const buyNowPrice = extractBuyNowFromSizeTile(tile);
+
+  if (tile && Number.isFinite(buyNowPrice)) {
+    console.log("🧮 Calculation flow: clicking size tile", {
+      size: currentTask.size,
+      buyNowPrice
+    });
+
+    clickElement(tile);
+
+    setTimeout(() => {
+      calculateLimitsOnBidInputScreen(0, buyNowPrice);
+    }, 1500);
+
+    return;
+  }
+
+  console.log("Calculation flow: size tile / Buy Now price not found yet, retrying...");
+  setTimeout(() => handleCalculateStockXLimitsPage(attempt + 1), 800);
+}
+
+function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
+  if (!currentTask) return;
+
+  if (currentTask.type !== "CALCULATE_STOCKX_LIMITS") {
+    console.log("Calculation input screen skipped: wrong task type", currentTask.type);
+    return;
+  }
+
+  if (attempt > 20) {
+    reportCalculationFailure("could not find bid input");
+    return;
+  }
+
+  const input = findBidInput();
+
+  if (!input) {
+    console.log("Calculation flow: bid input not found yet, retrying...");
+    setTimeout(() => {
+      calculateLimitsOnBidInputScreen(attempt + 1, knownBuyNowPrice);
+    }, 800);
+    return;
+  }
+
+  let buyNowPrice = Number(knownBuyNowPrice);
+
+  if (!Number.isFinite(buyNowPrice)) {
+    buyNowPrice = extractBuyNowFromSizeTile(findBuyNowSizeTile(currentTask.size));
+  }
+
+  if (!Number.isFinite(buyNowPrice)) {
+    const raw = document.body?.innerText || "";
+    const buyNowMatch = raw.match(/Buy Now[\s\S]{0,100}?€\s*([\d.,]+)/i);
+
+    if (buyNowMatch?.[1]) {
+      buyNowPrice = parseMoneyValue(buyNowMatch[1]);
+    }
+  }
+
+  if (!Number.isFinite(buyNowPrice)) {
+    reportCalculationFailure("could not read Buy Now price");
+    return;
+  }
+
+  const testBid = Math.floor(buyNowPrice - 1);
+
+  if (!Number.isFinite(testBid) || testBid <= 0) {
+    reportCalculationFailure("could not read Buy Now price");
+    return;
+  }
+
+  console.log("🧮 Filling test bid for fee calculation only:", {
+    buyNowPrice,
+    testBid
+  });
+
+  setBidInputValueOnly(input, testBid);
+
+  setTimeout(() => {
+    waitForSubtotalAndReportStockXLimits(0, testBid);
+  }, 1500);
+}
+
+function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid) {
+  if (!currentTask) return;
+
+  if (currentTask.type !== "CALCULATE_STOCKX_LIMITS") {
+    console.log("Subtotal wait skipped: wrong task type", currentTask.type);
+    return;
+  }
+
+  if (attempt > 20) {
+    reportCalculationFailure("could not extract subtotal");
+    return;
+  }
+
+  const subtotal = extractSubtotalFromPage();
+
+  if (!Number.isFinite(subtotal)) {
+    console.log("Calculation flow: subtotal not visible yet, retrying...");
+    setTimeout(() => {
+      waitForSubtotalAndReportStockXLimits(attempt + 1, testBid);
+    }, 800);
+    return;
+  }
+
+  const shipping = 10.95;
+  const processingFee = subtotal - Number(testBid) - shipping;
+  const feePercent = processingFee / Number(testBid);
+
+  if (
+    !Number.isFinite(processingFee) ||
+    !Number.isFinite(feePercent) ||
+    processingFee < 0 ||
+    feePercent < 0
+  ) {
+    reportCalculationFailure("invalid processing fee");
+    return;
+  }
+
+  const startBid = calculateStockXBidFromBudget({
+    buyingPrice: currentTask.targetBuyingPrice,
+    isMax: false,
+    feePercent,
+    vatRate: currentTask.clientVatRate,
+    vatFlow: currentTask.merchantVatFlow,
+    lojiqMargin: currentTask.lojiqMargin === true
+  });
+
+  const maxBid = calculateStockXBidFromBudget({
+    buyingPrice: currentTask.maximumBuyingPrice,
+    isMax: true,
+    feePercent,
+    vatRate: currentTask.clientVatRate,
+    vatFlow: currentTask.merchantVatFlow,
+    lojiqMargin: currentTask.lojiqMargin === true
+  });
+
+  if (!Number.isFinite(startBid) || !Number.isFinite(maxBid)) {
+    reportCalculationFailure("invalid processing fee");
+    return;
+  }
+
+  const reviewButton = findVisibleReviewButtonForSafetyCheck();
+
+  if (reviewButton) {
+    console.log("🛡️ Review button detected but NOT clicked during calculation flow");
+  }
+
+  console.log("✅ StockX limits calculated safely:", {
+    startBid,
+    maxBid,
+    testBid,
+    subtotal,
+    processingFee,
+    feePercent
+  });
+
+  reportTaskResult("STOCKX_LIMITS_CALCULATED", {
+    startBid,
+    maxBid,
+    testBid,
+    subtotal,
+    processingFee,
+    feePercent
+  });
 }
 
 function handleBuyPage(attempt = 0) {
