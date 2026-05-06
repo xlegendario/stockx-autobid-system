@@ -2272,16 +2272,6 @@ function fillBidPrice(attempt = 0) {
       return;
     }
 
-    const pageText = document.body?.innerText || "";
-
-    const expectedEuroRegex = new RegExp(`€\\s*${expectedVal}(\\.00)?\\b`);
-
-    if (!expectedEuroRegex.test(pageText)) {
-      console.log("⚠️ Page text/subtotal does not reflect custom bid yet, retrying...");
-      setTimeout(() => fillBidPrice(attempt + 1), 1000);
-      return;
-    }
-
     if (await stopIfNeeded("after fillBidPrice")) return;
 
     console.log("✅ Bid input and page state match expected value");
