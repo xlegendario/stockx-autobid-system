@@ -127,7 +127,10 @@ function getMerchantVatFlow(fields) {
 }
 
 function getLojiqMargin(fields) {
-  const raw = normalizeLookup(fields["Lojiq Stockx Margin?"]);
+  const raw = normalizeLookup(
+    fields["Lojiq StockX Margin?"] ??
+    fields["Lojiq Stockx Margin?"]
+  );
 
   return (
     raw === true ||
@@ -619,7 +622,9 @@ export async function buildTask(
       clientVatRate: getClientVatRate(fields),
       merchantVatFlow: getMerchantVatFlow(fields),
       lojiqMargin: getLojiqMargin(fields),
-      lojiqMarginRaw: fields["Lojiq Stockx Margin?"],
+      lojiqMarginRaw:
+        fields["Lojiq StockX Margin?"] ??
+        fields["Lojiq Stockx Margin?"],
       merchantVatFlowRaw: fields["Merchant StockX VAT Flow"]
     };
   }
