@@ -12,6 +12,35 @@ export async function submitTaskResult(recordId, payload) {
 
   const now = new Date().toISOString();
 
+  if (payload.action === "STOCKX_LIMITS_CALCULATED") {
+    const startBid = moneyOrNull(payload.startBid);
+    const maxBid = moneyOrNull(payload.maxBid);
+
+    if (startBid === null || maxBid === null) {
+      return await updateOrder(recordId, {
+        LastAction: "STOCKX_LIMITS_CALCULATION_FAILED",
+        LastSyncAt: now,
+        ErrorMessage: "StockX limits calculated but startBid or maxBid was invalid"
+      });
+    }
+
+    return await updateOrder(recordId, {
+      "Start StockX Bid": startBid,
+      "Max StockX Bid": maxBid,
+      LastAction: "STOCKX_LIMITS_CALCULATED",
+      LastSyncAt: now,
+      ErrorMessage: ""
+    });
+  }
+
+  if (payload.action === "STOCKX_LIMITS_CALCULATION_FAILED") {
+    return await updateOrder(recordId, {
+      LastAction: "STOCKX_LIMITS_CALCULATION_FAILED",
+      LastSyncAt: now,
+      ErrorMessage: payload.errorMessage || "StockX limits calculation failed"
+    });
+  }
+
   if (payload.action === "BID_CREATED" || payload.action === "BID_CREATED_FALLBACK") {
     return await updateOrder(recordId, {
       BidPlaced: true,
