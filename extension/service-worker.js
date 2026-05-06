@@ -121,7 +121,8 @@ function isBidResultAction(action) {
     action === "BID_CREATED" ||
     action === "BID_UPDATED" ||
     action === "SECOND_BID_CREATED" ||
-    action === "SECOND_BID_UPDATED"
+    action === "SECOND_BID_UPDATED" ||
+    action === "STOCKX_LIMITS_CALCULATED"
   );
 }
 
@@ -546,7 +547,8 @@ function buildStockXUrl(task) {
 
     if (
       task.type === "PLACE_OR_UPDATE" ||
-      task.type === "PLACE_SECOND_BID"
+      task.type === "PLACE_SECOND_BID" ||
+      task.type === "CALCULATE_STOCKX_LIMITS"
     ) {
       return `https://stockx.com/buy/${slug}?defaultBid=true`;
     }
