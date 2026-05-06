@@ -2198,9 +2198,17 @@ function fillBidPrice(attempt = 0) {
   }
 
   if (attempt > 15) {
-    console.log("Could not find bid input after multiple attempts");
     reportTaskResult(getBidFailureAction(), {
-      errorMessage: "Could not find bid input after multiple attempts"
+      errorMessage: "Bid input did not persist expected Current StockX Bid before Review Bid"
+    });
+    return;
+  }
+
+  const bidValue = formatBidValue(currentTask.maxBid);
+
+  if (!bidValue) {
+    reportTaskResult(getBidFailureAction(), {
+      errorMessage: "No valid bid value available on task"
     });
     return;
   }
@@ -2210,16 +2218,6 @@ function fillBidPrice(attempt = 0) {
   if (!input) {
     console.log("Bid input not found yet, retrying...");
     setTimeout(() => fillBidPrice(attempt + 1), 800);
-    return;
-  }
-
-  const bidValue = formatBidValue(currentTask.maxBid);
-
-  if (!bidValue) {
-    console.log("No valid maxBid available on task");
-    reportTaskResult(getBidFailureAction(), {
-      errorMessage: "No valid bid value available on task"
-    });
     return;
   }
 
@@ -2238,9 +2236,13 @@ function fillBidPrice(attempt = 0) {
     input.value = "";
   }
 
-  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new InputEvent("input", {
+    bubbles: true,
+    inputType: "deleteContentBackward",
+    data: null
+  }));
+
   input.dispatchEvent(new Event("change", { bubbles: true }));
-  input.dispatchEvent(new Event("blur", { bubbles: true }));
 
   if (nativeSetter) {
     nativeSetter.call(input, bidValue);
@@ -2248,28 +2250,45 @@ function fillBidPrice(attempt = 0) {
     input.value = bidValue;
   }
 
-  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new InputEvent("input", {
+    bubbles: true,
+    inputType: "insertText",
+    data: bidValue
+  }));
+
   input.dispatchEvent(new Event("change", { bubbles: true }));
-  input.dispatchEvent(new Event("blur", { bubbles: true }));
 
   setTimeout(async () => {
-    const currentVal = normalizeNumericString(input.value);
+    const freshInput = findBidInput();
+    const currentVal = normalizeNumericString(freshInput?.value || "");
     const expectedVal = normalizeNumericString(bidValue);
 
     console.log("Input value after fill attempt:", currentVal);
     console.log("Expected bid value:", expectedVal);
 
     if (currentVal !== expectedVal) {
-      console.log("❌ Bid value mismatch, retrying fill...");
+      console.log("❌ Bid input does not match expected value, retrying fill...");
+      setTimeout(() => fillBidPrice(attempt + 1), 1000);
+      return;
+    }
+
+    const pageText = document.body?.innerText || "";
+
+    const expectedEuroRegex = new RegExp(`€\\s*${expectedVal}(\\.00)?\\b`);
+
+    if (!expectedEuroRegex.test(pageText)) {
+      console.log("⚠️ Page text/subtotal does not reflect custom bid yet, retrying...");
       setTimeout(() => fillBidPrice(attempt + 1), 1000);
       return;
     }
 
     if (await stopIfNeeded("after fillBidPrice")) return;
 
-    console.log("✅ Bid input matches expected value");
-    waitForReviewBidEnabled();
-  }, 1200);
+    console.log("✅ Bid input and page state match expected value");
+    setTimeout(() => {
+      waitForReviewBidEnabled();
+    }, 1200);
+  }, 1800);
 }
 
 function waitForReviewBidEnabled(attempt = 0) {
