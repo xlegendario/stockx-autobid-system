@@ -122,12 +122,21 @@ function getClientVatRate(fields) {
 }
 
 function getMerchantVatFlow(fields) {
-  return String(normalizeLookup(fields["Merchant StockX VAT Flow"]) || "").trim().toUpperCase();
+  const raw = normalizeLookup(fields["Merchant StockX VAT Flow"]);
+  return String(raw || "").trim().toUpperCase();
 }
 
 function getLojiqMargin(fields) {
   const raw = normalizeLookup(fields["Lojiq Stockx Margin?"]);
-  return raw === true || raw === 1 || raw === "1" || raw === "true";
+
+  return (
+    raw === true ||
+    raw === 1 ||
+    raw === "1" ||
+    String(raw || "").trim().toLowerCase() === "true" ||
+    String(raw || "").trim() === "✓" ||
+    String(raw || "").trim() === "✔"
+  );
 }
 
 function hasRequiredCalculationInputs(fields) {
@@ -609,7 +618,9 @@ export async function buildTask(
       maximumBuyingPrice: getMaximumBuyingPrice(fields),
       clientVatRate: getClientVatRate(fields),
       merchantVatFlow: getMerchantVatFlow(fields),
-      lojiqMargin: getLojiqMargin(fields)
+      lojiqMargin: getLojiqMargin(fields),
+      lojiqMarginRaw: fields["Lojiq Stockx Margin?"],
+      merchantVatFlowRaw: fields["Merchant StockX VAT Flow"]
     };
   }
 
