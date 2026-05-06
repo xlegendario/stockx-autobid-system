@@ -130,35 +130,6 @@ function parseMoney(raw) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getTargetBuyingPrice(fields) {
-  return parseMoney(fields["Target Buying Price"]);
-}
-
-function getMaximumBuyingPrice(fields) {
-  return parseMoney(fields["Maximum Buying Price"]);
-}
-
-function getClientVatRate(fields) {
-  const raw = normalizeLookup(fields["Client VAT Rate"]);
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function getMerchantStockxVatFlow(fields) {
-  return String(
-    normalizeLookup(
-      fields["Merchant StockX VAT Flow"] ??
-      fields["Client StockX VAT Flow"] ??
-      ""
-    ) || ""
-  ).trim().toUpperCase();
-}
-
-function getLojiqStockxMargin(fields) {
-  const raw = normalizeLookup(fields["Lojiq Stockx Margin?"]);
-  return raw === true || raw === 1 || raw === "1" || raw === "true";
-}
-
 function getMaxBid(fields) {
   return parseMoney(
     fields["Current StockX Bid"] ??
@@ -182,15 +153,6 @@ function getCurrentBid(fields) {
 function shouldPlaceOrUpdate(fields) {
   if (needsRemoval(fields)) return false;
   if (isBidInProgress(fields)) return false;
-
-  const startBid = parseMoney(fields["Start StockX Bid"]);
-  const maxStockXBid = parseMoney(fields["Max StockX Bid"]);
-
-  const needsLimitCalculation =
-    !Number.isFinite(startBid) ||
-    !Number.isFinite(maxStockXBid);
-
-  if (needsLimitCalculation) return true;
 
   const target = getCurrentStockXBid(fields);
   const current = getCurrentBid(fields);
@@ -307,13 +269,13 @@ export async function buildTask(
 
   const filtered = records.filter((r) => {
     const f = r.fields;
-  
+
     if (!isAutobidEnabled(f)) return false;
-  
+
     const runner = getRunner(f);
     const accountGroup = getAccountGroupKey(f);
     const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
-  
+
     // MAIN_ACCOUNT records route by account group
     if (accountMode === "MAIN_ACCOUNT") {
       if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
@@ -325,16 +287,16 @@ export async function buildTask(
         return false;
       }
     }
-  
+
     const canPlaceOrUpdate = needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
 
     const canSecondFlow =
       isInitialSecondBidFlowCandidate(f) ||
       isSecondBidPlaceOrUpdateCandidate(f) ||
       isSecondBidRemoveCandidate(f);
-    
+
     if (!canPlaceOrUpdate && !needsRemoval(f) && !canSecondFlow) return false;
-  
+
     // Block alleen echte nieuwe placements
     if (canPlaceOrUpdate && !hasBidPlaced(f)) {
       const key = getBlockingKey(f);
@@ -342,7 +304,7 @@ export async function buildTask(
       if (activeBidKeys.has(key)) return false;
       if (inProgressBidKeys.has(key)) return false;
     }
-  
+
     return true;
   });
 
@@ -363,7 +325,7 @@ export async function buildTask(
   const removeCandidates = [];
   const verifyCandidates = [];
   const orderSyncCandidates = [];
-  
+
   const initialSecondBidFlowCandidates = [];
   const secondBidPlaceCandidates = [];
   const secondBidRemoveCandidates = [];
@@ -372,13 +334,13 @@ export async function buildTask(
 
   for (const key of Object.keys(groups)) {
     const group = groups[key];
-  
+
     const firstRemove = group.find((record) => needsRemoval(record.fields));
     if (firstRemove) {
       removeCandidates.push(firstRemove);
       continue;
     }
-  
+
     const firstSecondRemove = group.find((record) =>
       isSecondBidRemoveCandidate(record.fields)
     );
@@ -386,7 +348,7 @@ export async function buildTask(
       secondBidRemoveCandidates.push(firstSecondRemove);
       continue;
     }
-  
+
     const firstSecondPlace = group.find((record) =>
       isSecondBidPlaceOrUpdateCandidate(record.fields)
     );
@@ -394,7 +356,7 @@ export async function buildTask(
       secondBidPlaceCandidates.push(firstSecondPlace);
       continue;
     }
-  
+
     const firstInitialSecondFlow = group.find((record) =>
       isInitialSecondBidFlowCandidate(record.fields)
     );
@@ -402,22 +364,22 @@ export async function buildTask(
       initialSecondBidFlowCandidates.push(firstInitialSecondFlow);
       continue;
     }
-    
+
     const firstNewPlace = group.find((record) => {
       const f = record.fields;
       return needsBid(f) && !hasBidPlaced(f) && shouldPlaceOrUpdate(f);
     });
-    
+
     if (firstNewPlace) {
       newPlaceCandidates.push(firstNewPlace);
       continue;
     }
-    
+
     const firstUpdatePlace = group.find((record) => {
       const f = record.fields;
       return needsBidUpdate(f) && shouldPlaceOrUpdate(f);
     });
-    
+
     if (firstUpdatePlace) {
       updatePlaceCandidates.push(firstUpdatePlace);
     }
@@ -425,13 +387,13 @@ export async function buildTask(
 
   for (const record of activeBidRecords) {
     const f = record.fields;
-  
+
     if (!isAutobidEnabled(f)) continue;
-  
+
     const runner = getRunner(f);
     const accountGroup = getAccountGroupKey(f);
     const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
-  
+
     if (accountMode === "MAIN_ACCOUNT") {
       if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
         continue;
@@ -441,21 +403,21 @@ export async function buildTask(
         continue;
       }
     }
-  
+
     if (!isReadyForVerify(f)) continue;
-  
+
     verifyCandidates.push(record);
   }
 
   for (const record of secondActiveBidRecords) {
     const f = record.fields;
-  
+
     if (!isAutobidEnabled(f)) continue;
-  
+
     const runner = getRunner(f);
     const accountGroup = getAccountGroupKey(f);
     const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
-  
+
     if (accountMode === "MAIN_ACCOUNT") {
       if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
         continue;
@@ -465,19 +427,19 @@ export async function buildTask(
         continue;
       }
     }
-  
+
     if (!isSecondBidVerifyCandidate(f)) continue;
-  
+
     secondBidVerifyCandidates.push(record);
   }
-  
+
   for (const record of orderSyncRecords) {
     const f = record.fields;
-  
+
     const runner = getRunner(f);
     const accountGroup = getAccountGroupKey(f);
     const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
-  
+
     if (accountMode === "MAIN_ACCOUNT") {
       if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
         continue;
@@ -487,22 +449,22 @@ export async function buildTask(
         continue;
       }
     }
-  
+
     if (!needsOrderSync(f)) continue;
-  
+
     const orderNumber = getStockxOrderNumber(f);
     if (!orderNumber) continue;
-  
+
     orderSyncCandidates.push(record);
   }
 
   for (const record of secondOrderSyncRecords) {
     const f = record.fields;
-  
+
     const runner = getRunner(f);
     const accountGroup = getAccountGroupKey(f);
     const accountMode = String(normalizeLookup(f["Merchant StockX Account Mode"]) || "").trim().toUpperCase();
-  
+
     if (accountMode === "MAIN_ACCOUNT") {
       if (!requestedAccountGroupKey || accountGroup !== requestedAccountGroupKey) {
         continue;
@@ -512,22 +474,22 @@ export async function buildTask(
         continue;
       }
     }
-  
+
     if (!isSecondOrderSyncCandidate(f)) continue;
-  
+
     secondOrderSyncCandidates.push(record);
   }
-  
+
   const chosenRemove =
     removeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-  
+
   if (chosenRemove) {
     const fields = chosenRemove.fields;
     const sku = getSku(fields);
     const size = fields["Size"];
-  
+
     let stockxUrl = fields["StockX URL"] || null;
-  
+
     if (!stockxUrl) {
       try {
         const resolved = await resolveStockxUrlBySku(sku);
@@ -540,7 +502,7 @@ export async function buildTask(
         stockxUrl = null;
       }
     }
-    
+
     return {
       type: "REMOVE",
       recordId: chosenRemove.id,
@@ -552,73 +514,32 @@ export async function buildTask(
 
   const chosenSecondRemove =
     secondBidRemoveCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-  
+
   if (chosenSecondRemove) {
     return await buildSecondBidRemoveTask(chosenSecondRemove);
   }
-  
+
   const chosenInitialSecondFlow =
     initialSecondBidFlowCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-  
+
   if (chosenInitialSecondFlow) {
     return await buildInitialSecondBidFlowTask(chosenInitialSecondFlow);
   }
-  
+
   const chosenNewPlace =
     newPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-  
+
   const chosenUpdatePlace =
     updatePlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-  
+
   const chosenPlace = chosenNewPlace || chosenUpdatePlace;
-  
+
   if (chosenPlace) {
     const fields = chosenPlace.fields;
     const sku = getSku(fields);
     const size = fields["Size"];
     const maxBid = getCurrentStockXBid(fields);
 
-    const startBid = parseMoney(fields["Start StockX Bid"]);
-    const maxStockXBid = parseMoney(fields["Max StockX Bid"]);
-    
-    const needsLimitCalculation =
-      !Number.isFinite(startBid) ||
-      !Number.isFinite(maxStockXBid);
-
-    if (needsLimitCalculation) {
-      let stockxUrl = fields["StockX URL"] || null;
-    
-      if (!stockxUrl) {
-        try {
-          const resolved = await resolveStockxUrlBySku(sku);
-          stockxUrl = resolved.stockxUrl;
-        } catch {
-          stockxUrl = null;
-        }
-      }
-    
-      await updateOrder(chosenPlace.id, {
-        LastAction: "BID_LIMITS_IN_PROGRESS",
-        LastSyncAt: new Date().toISOString(),
-        ErrorMessage: ""
-      });
-    
-      return {
-        type: "CALCULATE_STOCKX_LIMITS",
-        recordId: chosenPlace.id,
-        sku,
-        size,
-    
-        targetBuyingPrice: getTargetBuyingPrice(fields),
-        maximumBuyingPrice: getMaximumBuyingPrice(fields),
-        clientVatRate: getClientVatRate(fields),
-        merchantStockxVatFlow: getMerchantStockxVatFlow(fields),
-        lojiqStockxMargin: getLojiqStockxMargin(fields),
-    
-        stockxUrl
-      };
-    }
-    
     if (!Number.isFinite(maxBid)) {
       console.log("❌ Skipping PLACE_OR_UPDATE: invalid Current StockX Bid", {
         recordId: chosenPlace.id,
@@ -628,9 +549,9 @@ export async function buildTask(
       });
       return null;
     }
-  
+
     let stockxUrl = fields["StockX URL"] || null;
-  
+
     if (!stockxUrl) {
       try {
         const resolved = await resolveStockxUrlBySku(sku);
@@ -645,7 +566,7 @@ export async function buildTask(
       LastSyncAt: new Date().toISOString(),
       ErrorMessage: ""
     });
-  
+
     return {
       type: "PLACE_OR_UPDATE",
       recordId: chosenPlace.id,
@@ -659,11 +580,11 @@ export async function buildTask(
 
   const chosenSecondPlace =
     secondBidPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-  
+
   if (chosenSecondPlace) {
     return await buildSecondBidTask(chosenSecondPlace);
   }
-  
+
   const chosenVerify =
     verifyCandidates.sort((a, b) => {
       const aLastSync = getLastSyncTimestamp(a.fields);
@@ -690,18 +611,18 @@ export async function buildTask(
     orderSyncCandidates.sort((a, b) => {
       const aLastSync = getLastOrderSyncTimestamp(a.fields);
       const bLastSync = getLastOrderSyncTimestamp(b.fields);
-  
+
       if (aLastSync === null && bLastSync === null) {
         return new Date(a.createdTime) - new Date(b.createdTime);
       }
-  
+
       if (aLastSync === null) return -1;
       if (bLastSync === null) return 1;
-  
+
       if (aLastSync !== bLastSync) {
         return aLastSync - bLastSync;
       }
-  
+
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
 
@@ -709,24 +630,24 @@ export async function buildTask(
     secondOrderSyncCandidates.sort((a, b) => {
       const aLastSync = getLastOrderSyncTimestamp(a.fields);
       const bLastSync = getLastOrderSyncTimestamp(b.fields);
-  
+
       if (aLastSync === null && bLastSync === null) {
         return new Date(a.createdTime) - new Date(b.createdTime);
       }
-  
+
       if (aLastSync === null) return -1;
       if (bLastSync === null) return 1;
-  
+
       if (aLastSync !== bLastSync) {
         return aLastSync - bLastSync;
       }
-  
+
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
-  
+
   if (chosenOrderSync) {
     const fields = chosenOrderSync.fields;
-  
+
     return {
       type: "SYNC_ORDER_STATUS",
       recordId: chosenOrderSync.id,
@@ -743,26 +664,26 @@ export async function buildTask(
     secondBidVerifyCandidates.sort((a, b) => {
       const aLastSync = getLastSyncTimestamp(a.fields);
       const bLastSync = getLastSyncTimestamp(b.fields);
-  
+
       if (aLastSync === null && bLastSync === null) {
         return new Date(a.createdTime) - new Date(b.createdTime);
       }
-  
+
       if (aLastSync === null) return -1;
       if (bLastSync === null) return 1;
-  
+
       if (aLastSync !== bLastSync) {
         return aLastSync - bLastSync;
       }
-  
+
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
-  
+
   if (chosenVerify) {
     const fields = chosenVerify.fields;
     const sku = getSku(fields);
     const size = fields["Size"];
-  
+
     return {
       type: "VERIFY_BID_STATUS",
       recordId: chosenVerify.id,
@@ -775,6 +696,6 @@ export async function buildTask(
   if (chosenSecondVerify) {
     return await buildSecondBidVerifyTask(chosenSecondVerify);
   }
-  
+
   return null;
 }
