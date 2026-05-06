@@ -2298,7 +2298,7 @@ function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
     return;
   }
 
-  if (attempt > 20) {
+  if (attempt > 25) {
     reportCalculationFailure("could not find bid input");
     return;
   }
@@ -2309,7 +2309,7 @@ function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
     console.log("Calculation flow: bid input not found yet, retrying...");
     setTimeout(() => {
       calculateLimitsOnBidInputScreen(attempt + 1, knownBuyNowPrice);
-    }, 800);
+    }, 1000);
     return;
   }
 
@@ -2346,6 +2346,57 @@ function calculateLimitsOnBidInputScreen(attempt = 0, knownBuyNowPrice = null) {
   });
 
   setBidInputValueOnly(input, testBid);
+
+  setTimeout(() => {
+    verifyCalculationBidInputValue(0, testBid);
+  }, 1200);
+}
+
+function verifyCalculationBidInputValue(attempt = 0, testBid) {
+  if (!currentTask) return;
+
+  if (currentTask.type !== "CALCULATE_STOCKX_LIMITS") {
+    console.log("Calculation value verify skipped: wrong task type", currentTask.type);
+    return;
+  }
+
+  if (attempt > 12) {
+    reportCalculationFailure("could not keep test bid in bid input");
+    return;
+  }
+
+  const input = findBidInput();
+
+  if (!input) {
+    console.log("Calculation flow: bid input disappeared after fill, retrying...");
+    setTimeout(() => {
+      verifyCalculationBidInputValue(attempt + 1, testBid);
+    }, 1000);
+    return;
+  }
+
+  const actual = parseMoneyValue(input.value);
+  const expected = Number(testBid);
+
+  if (actual !== expected) {
+    console.log("Calculation flow: test bid not stable in input yet, refilling...", {
+      expected,
+      actual,
+      rawValue: input.value
+    });
+
+    setBidInputValueOnly(input, expected);
+
+    setTimeout(() => {
+      verifyCalculationBidInputValue(attempt + 1, testBid);
+    }, 1200);
+
+    return;
+  }
+
+  console.log("✅ Calculation flow: test bid is stable in input", {
+    testBid
+  });
 
   setTimeout(() => {
     waitForSubtotalAndReportStockXLimits(0, testBid);
