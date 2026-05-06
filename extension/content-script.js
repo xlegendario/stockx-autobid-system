@@ -1,32 +1,6 @@
 console.log("StockX Autobid content script loaded");
 
-let hasAuthErrorBeenReported = false;
-const originalFetch = window.fetch;
-
-window.fetch = async (...args) => {
-  const response = await originalFetch(...args);
-
-  try {
-    const url = String(response.url || "");
-
-    if (
-      url.includes("/api/graphql") &&
-      response.status === 401 &&
-      !hasAuthErrorBeenReported
-    ) {
-      console.warn("🚨 StockX GraphQL 401 detected");
-      hasAuthErrorBeenReported = true;
-
-      chrome.runtime.sendMessage({
-        type: "AUTH_REQUIRED"
-      });
-    }
-  } catch (err) {
-    console.warn("Auth 401 detector failed:", err);
-  }
-
-  return response;
-};
+let currentTask = null;
 
 async function shouldForceStopRunner() {
   const data = await chrome.storage.local.get(["forceStop"]);
@@ -47,7 +21,6 @@ window.addEventListener("load", async () => {
 
   const stored = await chrome.storage.local.get("currentTask");
   currentTask = stored.currentTask || null;
-  if (detectUnauthorizedState()) return;
 
   if (
     currentTask &&
@@ -185,6 +158,7 @@ function findFirstSearchResultLink() {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
+    if (!href.startsWith("/")) return false;
     // ❌ exclude logo/home/nav/filter links
     if (href === "/" || href === "https://stockx.com/") return false;
     if (href.includes("/search")) return false;
@@ -198,10 +172,13 @@ function findFirstSearchResultLink() {
     if (href.includes("/category")) return false;
     if (href.includes("/brands")) return false;
 
+    const rect = a.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
     // Alleen links in het product-grid gebied, niet header/sidebar
     if (rect.top < 250) return false;
     if (rect.left < 250) return false;
 
+    return text.length > 0;
     const url = new URL(href, window.location.origin);
     const path = url.pathname;
 
@@ -288,42 +265,8 @@ async function verifyProductPageSkuOrFail(attempt = 0) {
   return false;
 }
 
-function detectUnauthorizedState() {
-  if (hasAuthErrorBeenReported) return false;
-
-  const bodyText = String(document.body?.innerText || "").toLowerCase();
-
-  if (bodyText.includes("unauthorized")) {
-    console.warn("🚨 Unauthorized state detected via DOM");
-    hasAuthErrorBeenReported = true;
-    handleAuthError();
-    return true;
-  }
-
-  return false;
-}
-
-async function handleAuthError() {
-  console.error("🚨 Handling AUTH_REQUIRED state");
-
-  try {
-    if (currentTask?.recordId) {
-      await reportTaskResult("AUTH_REQUIRED", {
-        errorMessage: "StockX session unauthorized / temporary auth failure"
-      });
-    }
-  } catch (e) {
-    console.error("❌ Failed to report AUTH_REQUIRED:", e);
-  }
-
-  chrome.runtime.sendMessage({
-    type: "AUTH_REQUIRED"
-  });
-}
-
 async function handleTask() {
   if (!currentTask) return;
-  if (detectUnauthorizedState()) return;
 
   if (await stopIfNeeded("handleTask")) return;
 
