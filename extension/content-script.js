@@ -2457,6 +2457,21 @@ function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid, testBidSourc
     processingFee < 0 ||
     feePercent < 0
   ) {
+    console.log("Calculation flow: invalid processing fee, retrying subtotal parse...", {
+      attempt,
+      testBid,
+      subtotal,
+      processingFee,
+      feePercent
+    });
+
+    if (attempt < 20) {
+      setTimeout(() => {
+        waitForSubtotalAndReportStockXLimits(attempt + 1, testBid, testBidSource);
+      }, 800);
+      return;
+    }
+
     reportCalculationFailure("invalid processing fee");
     return;
   }
