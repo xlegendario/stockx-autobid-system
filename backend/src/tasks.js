@@ -308,6 +308,12 @@ export async function buildTask(
       .filter(Boolean)
   );
 
+  const secondActiveBidKeys = new Set(
+    secondActiveBidRecords
+      .map((record) => getBlockingKey(record.fields))
+      .filter(Boolean)
+  );
+
   const inProgressBidKeys = new Set(
     records
       .filter((record) => isBidInProgress(record.fields))
@@ -352,6 +358,7 @@ export async function buildTask(
       const key = getBlockingKey(f);
     
       if (activeBidKeys.has(key)) return false;
+      if (secondActiveBidKeys.has(key)) return false;
       if (inProgressBidKeys.has(key)) return false;
     }
 
