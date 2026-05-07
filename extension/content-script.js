@@ -2912,7 +2912,31 @@ function reportTaskResult(action, extra = {}) {
   );
 }
 
-async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
+function findVisibleReviewActionButton() {
+  return Array.from(document.querySelectorAll("button")).find((btn) => {
+    const text = normalizeText(btn.innerText || "");
+    const rect = btn.getBoundingClientRect();
+    const style = window.getComputedStyle(btn);
+
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    if (btn.disabled || btn.getAttribute("aria-disabled") === "true") return false;
+
+    return text.includes("review bid") || text.includes("review order");
+  });
+}
+
+function hasRetryableStockxIssue() {
+  const pageText = getPageText();
+
+  return (
+    pageText.includes("there was an issue") ||
+    pageText.includes("please review and try again") ||
+    pageText.includes("try again")
+  );
+}
+
+async function waitForFinalOutcome(finalButtonText = "", attempt = 0, retryCount = 0) {
   if (attempt > 20) {
     console.log("Final outcome not detected after multiple attempts");
 
@@ -2945,6 +2969,43 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
   }
 
   const pageText = getPageText();
+
+  const normalizedFinalButtonText = String(finalButtonText || "").trim().toLowerCase();
+
+  if (
+    normalizedFinalButtonText.includes("confirm bid") &&
+    hasRetryableStockxIssue()
+  ) {
+    const reviewBtn = findVisibleReviewActionButton();
+
+    if (reviewBtn && retryCount < 2) {
+      console.log("🔁 StockX issue after Confirm Bid; retrying Review Bid", {
+        retryCount: retryCount + 1,
+        buttonText: reviewBtn.innerText
+      });
+
+      if (await stopIfNeeded("before retry Review Bid")) return;
+
+      clickElement(reviewBtn);
+
+      setTimeout(() => {
+        clickConfirmBid();
+      }, 2500);
+
+      setTimeout(() => {
+        waitForFinalOutcome(finalButtonText, 0, retryCount + 1);
+      }, 6000);
+
+      return;
+    }
+
+    if (retryCount >= 2) {
+      reportTaskResult(getBidFailureAction(), {
+        errorMessage: "StockX issue after Confirm Bid; retry limit reached"
+      });
+      return;
+    }
+  }
 
   if (
     pageText.includes("your order has been placed successfully") ||
@@ -3018,6 +3079,6 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0) {
 
   console.log("Waiting for final outcome...");
   setTimeout(() => {
-    waitForFinalOutcome(finalButtonText, attempt + 1);
+    waitForFinalOutcome(finalButtonText, attempt + 1, retryCount);
   }, 1500);
 }
