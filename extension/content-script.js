@@ -611,10 +611,7 @@ function findMatchingOrderRow(expectedSizeText) {
       return false;
     }
 
-    return (
-      text.includes(expectedSizeText) ||
-      text.includes(`size: ${expectedSizeText}`)
-    );
+    return textHasExactEuSize(el.innerText, currentTask.size);
   });
 
   if (rowCandidates.length === 0) return null;
@@ -788,17 +785,16 @@ function handleVerifyBidsPage(attempt = 0) {
     const text = normalizeText(el.innerText);
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
-
+  
     if (!text) return false;
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
-
-    return text.includes(expectedSizeText);
+  
+    return textHasExactEuSize(el.innerText, currentTask.size);
   });
-
+  
   const matchingBidRow = rowCandidates.find((row) => {
-    const text = normalizeText(row.innerText);
-    return text.includes(expectedSizeText);
+    return textHasExactEuSize(row.innerText, currentTask.size);
   });
 
   if (matchingBidRow) {
@@ -1451,6 +1447,19 @@ function normalizeText(value) {
 function getExpectedEuSizeText(size) {
   const normalized = normalizeText(size);
   return `eu ${normalized}`;
+}
+
+function textHasExactEuSize(text, size) {
+  const normalizedText = normalizeText(text);
+  const normalizedSize = normalizeText(size);
+
+  if (!normalizedText || !normalizedSize) return false;
+
+  const escapedSize = normalizedSize.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  const regex = new RegExp(`(^|[^0-9.])eu\\s+${escapedSize}([^0-9.]|$)`, "i");
+
+  return regex.test(normalizedText);
 }
 
 function openSizeDropdownAndSelect(targetSize) {
@@ -2442,7 +2451,7 @@ function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid, testBidSourc
   if (!Number.isFinite(subtotal)) {
     console.log("Calculation flow: subtotal not visible yet, retrying...");
     setTimeout(() => {
-      waitForSubtotalAndReportStockXLimits(attempt + 1, testBid);
+      waitForSubtotalAndReportStockXLimits(attempt + 1, testBid, testBidSource);
     }, 800);
     return;
   }
