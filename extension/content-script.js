@@ -608,15 +608,6 @@ function extractFinalStockXPriceFromText(text) {
   return null;
 }
 
-  const fallbackMatch = raw.match(/Total[\s\S]{0,60}?€\s*([\d.,]+)/i);
-  if (fallbackMatch?.[1]) {
-    const parsed = parseMoneyValue(fallbackMatch[1]);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-
-  return null;
-}
-
 function findMatchingOrderRow(expectedSizeText) {
   const rowCandidates = Array.from(
     document.querySelectorAll("tr, [role='row']")
