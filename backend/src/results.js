@@ -5,6 +5,11 @@ function moneyOrNull(value) {
   return Number.isFinite(num) ? Math.floor(num) : null;
 }
 
+function decimalMoneyOrNull(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? Math.round(num * 100) / 100 : null;
+}
+
 export async function submitTaskResult(recordId, payload) {
   if (!recordId) {
     throw new Error("recordId is required");
@@ -178,8 +183,8 @@ export async function submitTaskResult(recordId, payload) {
       LastSyncAt: now,
 
       "StockX Order Number": orderNumber,
-      "Final StockX Price": moneyOrNull(payload.finalStockXPrice),
-
+      "Final StockX Price": decimalMoneyOrNull(payload.finalStockXPrice)
+      
       "First StockX Buy Now Price": moneyOrNull(payload.firstBuyNowPrice),
       "First StockX Order Placed At": now,
 
@@ -283,7 +288,7 @@ export async function submitTaskResult(recordId, payload) {
       LastSyncAt: now,
 
       "Second StockX Order Number": orderNumber,
-      "Second Final StockX Price": moneyOrNull(payload.finalStockXPrice),
+      "Second Final StockX Price": decimalMoneyOrNull(payload.finalStockXPrice),
       "Second Order Placed At": now,
 
       ErrorMessage: ""
