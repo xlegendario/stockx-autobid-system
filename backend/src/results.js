@@ -183,7 +183,7 @@ export async function submitTaskResult(recordId, payload) {
       LastSyncAt: now,
 
       "StockX Order Number": orderNumber,
-      "Final StockX Price": decimalMoneyOrNull(payload.finalStockXPrice)
+      "Final StockX Price": decimalMoneyOrNull(payload.finalStockXPrice),
       
       "First StockX Buy Now Price": moneyOrNull(payload.firstBuyNowPrice),
       "First StockX Order Placed At": now,
