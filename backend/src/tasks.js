@@ -350,6 +350,8 @@ export async function buildTask(
       isInitialSecondBidFlowCandidate(f) ||
       isSecondBidPlaceOrUpdateCandidate(f) ||
       isSecondBidRemoveCandidate(f);
+    
+    if (canSecondFlow && isBidInProgress(f)) return false;
 
     if (!canCalculateLimits && !canPlaceOrUpdate && !needsRemoval(f) && !canSecondFlow) return false;
 
@@ -423,9 +425,19 @@ export async function buildTask(
       continue;
     }
 
-    const firstInitialSecondFlow = group.find((record) =>
-      isInitialSecondBidFlowCandidate(record.fields)
-    );
+    const firstInitialSecondFlow = group.find((record) => {
+      const f = record.fields;
+    
+      const stockxOrderNumber = String(normalizeLookup(f["StockX Order Number"]) || "").trim();
+      const secondBidFlowStatus = String(normalizeLookup(f["Second Bid Flow Status"]) || "").trim();
+      const lastAction = String(f["LastAction"] || "").trim();
+    
+      if (stockxOrderNumber) return false;
+      if (secondBidFlowStatus) return false;
+      if (lastAction === "FIRST_ORDER_PLACED") return false;
+    
+      return isInitialSecondBidFlowCandidate(f);
+    });
     if (firstInitialSecondFlow) {
       initialSecondBidFlowCandidates.push(firstInitialSecondFlow);
       continue;
@@ -638,11 +650,17 @@ export async function buildTask(
 
   const chosenInitialSecondFlow =
     initialSecondBidFlowCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-
+  
   if (chosenInitialSecondFlow) {
+    await updateOrder(chosenInitialSecondFlow.id, {
+      LastAction: "BID_IN_PROGRESS",
+      LastSyncAt: new Date().toISOString(),
+      ErrorMessage: ""
+    });
+  
     return await buildInitialSecondBidFlowTask(chosenInitialSecondFlow);
   }
-
+  
   const chosenNewPlace =
     newPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
 
