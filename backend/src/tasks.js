@@ -648,6 +648,13 @@ export async function buildTask(
     };
   }
 
+  const chosenSecondPlace =
+    secondBidPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  
+  if (chosenSecondPlace) {
+    return await buildSecondBidTask(chosenSecondPlace);
+  }
+
   const chosenInitialSecondFlow =
     initialSecondBidFlowCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
   
@@ -711,13 +718,6 @@ export async function buildTask(
       currentBid: getCurrentBid(fields),
       stockxUrl
     };
-  }
-
-  const chosenSecondPlace =
-    secondBidPlaceCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
-
-  if (chosenSecondPlace) {
-    return await buildSecondBidTask(chosenSecondPlace);
   }
 
   const chosenVerify =
