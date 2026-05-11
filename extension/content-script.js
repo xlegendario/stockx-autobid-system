@@ -567,6 +567,23 @@ function extractFinalStockXPriceFromText(text) {
     .map((line) => line.trim())
     .filter(Boolean);
 
+  function parseDisplayedEuro(value) {
+    const cleaned = String(value || "")
+      .replace(/[^\d.,]/g, "")
+      .trim();
+
+    if (!cleaned) return null;
+
+    // 139.29 of 139,29 = decimalen
+    const decimalMatch = cleaned.match(/^(\d+)[.,](\d{2})$/);
+    if (decimalMatch) {
+      return Number(`${decimalMatch[1]}.${decimalMatch[2]}`);
+    }
+
+    const parsed = Number(cleaned.replace(",", "."));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
   for (let i = 0; i < lines.length - 1; i++) {
     const label = normalizeText(lines[i]);
 
@@ -575,11 +592,21 @@ function extractFinalStockXPriceFromText(text) {
       const match = candidate.match(/€\s*([\d.,]+)/);
 
       if (match?.[1]) {
-        const parsed = parseMoneyValue(match[1]);
+        const parsed = parseDisplayedEuro(match[1]);
         if (Number.isFinite(parsed)) return parsed;
       }
     }
   }
+
+  const fallbackMatch = raw.match(/Total[\s\S]{0,80}?€\s*([\d.,]+)/i);
+
+  if (fallbackMatch?.[1]) {
+    const parsed = parseDisplayedEuro(fallbackMatch[1]);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
+}
 
   const fallbackMatch = raw.match(/Total[\s\S]{0,60}?€\s*([\d.,]+)/i);
   if (fallbackMatch?.[1]) {
