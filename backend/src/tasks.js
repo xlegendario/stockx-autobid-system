@@ -22,7 +22,7 @@ function isVerifyCandidate(fields) {
   );
 }
 
-function isReadyForVerify(fields, cooldownMinutes = 30) {
+function isReadyForVerify(fields, cooldownMinutes = 60) {
   if (!isVerifyCandidate(fields)) return false;
 
   const raw = fields["LastSyncAt"];
