@@ -2959,7 +2959,7 @@ function reportTaskResult(action, extra = {}) {
           chrome.runtime.sendMessage({
             type: "WAKE_RUNNER"
           });
-        }, 1000);
+        }, 300);
 
         return;
       }
@@ -2970,7 +2970,7 @@ function reportTaskResult(action, extra = {}) {
         chrome.runtime.sendMessage({
           type: "WAKE_RUNNER"
         });
-      }, 1000);
+      }, 300);
     }
   );
 }
