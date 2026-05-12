@@ -263,6 +263,19 @@ export function isSecondBidVerifyCandidate(fields) {
   if (getSecondStatus(fields) !== "SECOND_BID_PLACED") return false;
   if (secondBidNeedsRemoval(fields)) return false;
 
+  const rawLastSync = fields["LastSyncAt"];
+  if (rawLastSync) {
+    const lastSync = new Date(rawLastSync);
+  
+    if (!Number.isNaN(lastSync.getTime())) {
+      const minutesAgo = (Date.now() - lastSync.getTime()) / 60000;
+  
+      if (minutesAgo < 60) {
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 
