@@ -761,64 +761,49 @@ export async function buildTask(
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
 
-  const chosenSecondOrderSync =
-    secondOrderSyncCandidates.sort((a, b) => {
-      const aLastSync = getLastOrderSyncTimestamp(a.fields);
-      const bLastSync = getLastOrderSyncTimestamp(b.fields);
-
-      if (aLastSync === null && bLastSync === null) {
+    const chosenSecondOrderSync =
+      secondOrderSyncCandidates.sort((a, b) => {
+        const aLastSync = getLastOrderSyncTimestamp(a.fields);
+        const bLastSync = getLastOrderSyncTimestamp(b.fields);
+  
+        if (aLastSync === null && bLastSync === null) {
+          return new Date(a.createdTime) - new Date(b.createdTime);
+        }
+  
+        if (aLastSync === null) return -1;
+        if (bLastSync === null) return 1;
+  
+        if (aLastSync !== bLastSync) {
+          return aLastSync - bLastSync;
+        }
+  
         return new Date(a.createdTime) - new Date(b.createdTime);
-      }
-
-      if (aLastSync === null) return -1;
-      if (bLastSync === null) return 1;
-
-      if (aLastSync !== bLastSync) {
-        return aLastSync - bLastSync;
-      }
-
-      return new Date(a.createdTime) - new Date(b.createdTime);
-    })[0];
-
-  if (chosenOrderSync) {
-    const fields = chosenOrderSync.fields;
-
-    return {
-      type: "SYNC_ORDER_STATUS",
-      recordId: chosenOrderSync.id,
-      orderNumber: getStockxOrderNumber(fields),
-      stockxUrl: fields["StockX URL"] || null
-    };
-  }
-
-  if (chosenSecondOrderSync) {
-    return buildSecondOrderSyncTask(chosenSecondOrderSync);
-  }
-
-  const chosenSecondVerify =
+      })[0];
+  
+   const chosenSecondVerify =
     secondBidVerifyCandidates.sort((a, b) => {
       const aLastSync = getLastSyncTimestamp(a.fields);
       const bLastSync = getLastSyncTimestamp(b.fields);
-
+  
       if (aLastSync === null && bLastSync === null) {
         return new Date(a.createdTime) - new Date(b.createdTime);
       }
-
+  
       if (aLastSync === null) return -1;
       if (bLastSync === null) return 1;
-
+  
       if (aLastSync !== bLastSync) {
         return aLastSync - bLastSync;
       }
-
+  
       return new Date(a.createdTime) - new Date(b.createdTime);
     })[0];
-
+  
   if (chosenVerify) {
     const fields = chosenVerify.fields;
     const sku = getSku(fields);
     const size = fields["Size"];
-
+  
     return {
       type: "VERIFY_BID_STATUS",
       recordId: chosenVerify.id,
@@ -827,10 +812,25 @@ export async function buildTask(
       stockxUrl: fields["StockX URL"] || null
     };
   }
-
+  
   if (chosenSecondVerify) {
     return await buildSecondBidVerifyTask(chosenSecondVerify);
   }
-
+  
+  if (chosenOrderSync) {
+    const fields = chosenOrderSync.fields;
+  
+    return {
+      type: "SYNC_ORDER_STATUS",
+      recordId: chosenOrderSync.id,
+      orderNumber: getStockxOrderNumber(fields),
+      stockxUrl: fields["StockX URL"] || null
+    };
+  }
+  
+  if (chosenSecondOrderSync) {
+    return buildSecondOrderSyncTask(chosenSecondOrderSync);
+  }
+  
   return null;
 }
