@@ -641,6 +641,37 @@ function findMatchingOrderRow(expectedSizeText) {
   })[0];
 }
 
+function findMatchingOrderRows(expectedSizeText) {
+  const rowCandidates = Array.from(
+    document.querySelectorAll("tr, [role='row']")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText);
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    if (
+      text.includes("item") &&
+      text.includes("order number") &&
+      text.includes("purchase date") &&
+      text.includes("status")
+    ) {
+      return false;
+    }
+
+    return textHasExactEuSize(el.innerText, currentTask.size);
+  });
+
+  return rowCandidates.sort((a, b) => {
+    const aRect = a.getBoundingClientRect();
+    const bRect = b.getBoundingClientRect();
+    return aRect.top - bRect.top;
+  });
+}
+
 function findMatchingOrderRowByOrderNumber(orderNumber) {
   const normalizedOrderNumber = normalizeText(orderNumber);
 
@@ -1060,8 +1091,21 @@ async function handleVerifyOrdersPage(attempt = 0) {
     return;
   }
 
-  const matchingRow = findMatchingOrderRow(expectedSizeText);
+  const matchingRows = findMatchingOrderRows(expectedSizeText);
 
+  let matchingRow = null;
+  
+  if (currentTask.type === "VERIFY_SECOND_BID_STATUS") {
+    const firstOrderNumber = String(currentTask.firstStockxOrderNumber || "").trim();
+  
+    matchingRow = matchingRows.find((row) => {
+      const rowOrderNumber = extractOrderNumberFromText(row.innerText || "");
+      return rowOrderNumber && rowOrderNumber !== firstOrderNumber;
+    }) || null;
+  } else {
+    matchingRow = matchingRows[0] || null;
+  }
+  
   if (!matchingRow) {
     if (attempt < 12) {
       console.log("🔍 Matching order row not found yet, retrying...");
@@ -1085,29 +1129,6 @@ async function handleVerifyOrdersPage(attempt = 0) {
       errorMessage: "Matching order found but could not extract order number"
     });
     return;
-  }
-
-  if (currentTask.type === "VERIFY_SECOND_BID_STATUS") {
-    const foundOrderNumber = String(orderNumber || "").trim();
-    const firstOrderNumber = String(currentTask.firstStockxOrderNumber || "").trim();
-    const knownSecondOrderNumber = String(currentTask.secondStockxOrderNumber || "").trim();
-
-    if (firstOrderNumber && foundOrderNumber === firstOrderNumber) {
-      console.log("⚠️ Second verify found FIRST order, ignoring:", {
-        foundOrderNumber,
-        firstOrderNumber
-      });
-
-      reportTaskResult("SECOND_BID_MISSING_NO_ORDER_FOUND", {
-        errorMessage: `Second bid missing; only first StockX order was found: ${foundOrderNumber}`
-      });
-
-      return;
-    }
-
-    if (knownSecondOrderNumber && foundOrderNumber === knownSecondOrderNumber) {
-      console.log("✅ Second verify found already-known second order:", foundOrderNumber);
-    }
   }
 
   console.log("✅ Verify: matching order found, clicking order row for detail page", {
