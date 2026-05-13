@@ -82,6 +82,42 @@ function hasBidPlaced(fields) {
   return false;
 }
 
+function hasSecondBidPlaced(fields) {
+  const raw = fields["SecondBidPlaced"];
+
+  if (raw === true) return true;
+  if (raw === 1) return true;
+  if (raw === "1") return true;
+
+  return false;
+}
+
+function wasRecentlyVerifiedForBidUpdate(fields, minutes = 10) {
+  const lastAction = String(fields["LastAction"] || "").trim();
+  if (lastAction !== "BID_VERIFIED_STILL_LIVE") return false;
+
+  const raw = fields["LastSyncAt"];
+  if (!raw) return false;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  return Date.now() - parsed.getTime() < minutes * 60 * 1000;
+}
+
+function wasRecentlyVerifiedForSecondBidUpdate(fields, minutes = 10) {
+  const secondLastAction = String(fields["SecondLastAction"] || "").trim();
+  if (secondLastAction !== "SECOND_BID_VERIFIED_STILL_LIVE") return false;
+
+  const raw = fields["LastSyncAt"];
+  if (!raw) return false;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  return Date.now() - parsed.getTime() < minutes * 60 * 1000;
+}
+
 function isBidInProgress(fields) {
   const lastAction = String(fields["LastAction"] || "").trim();
 
@@ -420,7 +456,18 @@ export async function buildTask(
     const firstSecondPlace = group.find((record) =>
       isSecondBidPlaceOrUpdateCandidate(record.fields)
     );
+    
     if (firstSecondPlace) {
+      const f = firstSecondPlace.fields;
+    
+      if (
+        hasSecondBidPlaced(f) &&
+        !wasRecentlyVerifiedForSecondBidUpdate(f)
+      ) {
+        secondBidVerifyCandidates.push(firstSecondPlace);
+        continue;
+      }
+    
       secondBidPlaceCandidates.push(firstSecondPlace);
       continue;
     }
@@ -459,6 +506,16 @@ export async function buildTask(
     });
 
     if (firstUpdatePlace) {
+      const f = firstUpdatePlace.fields;
+    
+      if (
+        hasBidPlaced(f) &&
+        !wasRecentlyVerifiedForBidUpdate(f)
+      ) {
+        verifyCandidates.push(firstUpdatePlace);
+        continue;
+      }
+    
       updatePlaceCandidates.push(firstUpdatePlace);
     }
   }
