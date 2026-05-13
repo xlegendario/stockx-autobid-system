@@ -127,9 +127,9 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
-  // verify: bid still live -> geen LastAction flippen
   if (payload.action === "BID_VERIFIED_STILL_LIVE") {
     return await updateOrder(recordId, {
+      LastAction: "BID_VERIFIED_STILL_LIVE",
       LastSyncAt: now,
       ErrorMessage: ""
     });
