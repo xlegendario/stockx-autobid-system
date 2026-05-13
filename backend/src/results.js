@@ -384,6 +384,7 @@ export async function submitTaskResult(recordId, payload) {
       "Final StockX Price": Number.isFinite(Number(payload.finalStockXPrice))
         ? Number(payload.finalStockXPrice)
         : null,
+      "First StockX Order Placed At": now,
       ErrorMessage: ""
     });
   }
