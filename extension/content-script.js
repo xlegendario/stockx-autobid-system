@@ -851,8 +851,16 @@ function handleVerifyBidsPage(attempt = 0) {
     reportTaskResult(getVerifyStillLiveAction());
     return;
   }
-
-  console.log("🔍 Verify: bid not found on bids page, checking orders...");
+  
+  if (attempt < 8) {
+    console.log("🔍 Verify: bid row not found yet, retrying bids page before checking orders...");
+    setTimeout(() => {
+      handleVerifyBidsPage(attempt + 1);
+    }, 1000);
+    return;
+  }
+  
+  console.log("🔍 Verify: bid not found after retries, checking orders...");
   goToVerifyOrdersPage();
 }
 
