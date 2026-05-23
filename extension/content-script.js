@@ -1510,7 +1510,9 @@ function textHasExactEuSize(text, size) {
 }
 
 function scrollSizeDropdownDown() {
-  const candidates = Array.from(document.querySelectorAll("div, [role='listbox'], [role='dialog']"))
+  const candidates = Array.from(
+    document.querySelectorAll('[role="dialog"] div, [role="listbox"]')
+  )
     .filter((el) => {
       const style = window.getComputedStyle(el);
       const rect = el.getBoundingClientRect();
