@@ -1649,6 +1649,13 @@ function clickUpdateButtonForRemove(attempt = 0) {
   console.log("🧹 REMOVE flow reached clickUpdateButtonForRemove");
 
   if (attempt > 25) {
+    if (currentTask?.type === "REMOVE_SECOND_BID") {
+      reportTaskResult("SECOND_BID_REMOVED", {
+        errorMessage: "Second bid was already missing on StockX during remove flow"
+      });
+      return;
+    }
+  
     reportTaskResult(getRemoveNotFoundAction(), {
       errorMessage: "Update button not found after selecting size"
     });
