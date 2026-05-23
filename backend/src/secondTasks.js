@@ -238,16 +238,6 @@ export async function buildSecondBidRemoveTask(record) {
   const sku = getSku(fields);
   const stockxUrl = await resolveUrl(fields);
 
-  if (!stockxUrl) {
-    console.error("❌ Skipping REMOVE_SECOND_BID: missing StockX URL", {
-      recordId: record.id,
-      sku,
-      size: fields["Size"]
-    });
-
-    return null;
-  }
-
   return {
     type: "REMOVE_SECOND_BID",
     recordId: record.id,
