@@ -1509,6 +1509,32 @@ function textHasExactEuSize(text, size) {
   return regex.test(normalizedText);
 }
 
+function scrollSizeDropdownDown() {
+  const candidates = Array.from(document.querySelectorAll("div, [role='listbox'], [role='dialog']"))
+    .filter((el) => {
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+
+      return (
+        style.visibility !== "hidden" &&
+        style.display !== "none" &&
+        rect.width > 250 &&
+        rect.height > 250 &&
+        el.scrollHeight > el.clientHeight
+      );
+    });
+
+  const dropdown = candidates.sort((a, b) => {
+    return (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight);
+  })[0];
+
+  if (!dropdown) return false;
+
+  dropdown.scrollTop += 300;
+  dropdown.dispatchEvent(new Event("scroll", { bubbles: true }));
+  return true;
+}
+
 function openSizeDropdownAndSelect(targetSize) {
   console.log("Trying to open size dropdown for:", targetSize);
 
@@ -1570,8 +1596,9 @@ function selectSizeFromDropdown(targetSize) {
   });
 
   if (!match) {
-    console.log("Size option not found yet, retrying...");
-    setTimeout(() => selectSizeFromDropdown(targetSize), 1000);
+    console.log("Size option not found yet, scrolling dropdown and retrying...");
+    scrollSizeDropdownDown();
+    setTimeout(() => selectSizeFromDropdown(targetSize), 700);
     return;
   }
 
@@ -1628,8 +1655,9 @@ function selectSizeFromDropdownForRemove(targetSize) {
   });
 
   if (candidates.length === 0) {
-    console.log("REMOVE: size option not found yet, retrying...");
-    setTimeout(() => selectSizeFromDropdownForRemove(targetSize), 1000);
+    console.log("REMOVE: size option not found yet, scrolling dropdown and retrying...");
+    scrollSizeDropdownDown();
+    setTimeout(() => selectSizeFromDropdownForRemove(targetSize), 700);
     return;
   }
 
@@ -1881,11 +1909,11 @@ function selectSizeFromDropdownForRemoveVerification(targetSize) {
   });
 
   if (!match) {
-    console.log("REMOVE VERIFY: size option not found yet, retrying...");
-    setTimeout(() => selectSizeFromDropdownForRemoveVerification(targetSize), 1000);
+    console.log("REMOVE VERIFY: size option not found yet, scrolling dropdown and retrying...");
+    scrollSizeDropdownDown();
+    setTimeout(() => selectSizeFromDropdownForRemoveVerification(targetSize), 700);
     return;
   }
-
   console.log("🧹 Clicking size option for REMOVE verification:", match.innerText);
   match.click();
 
