@@ -495,10 +495,16 @@ async function fetchNextTask() {
 
   const data = await res.json();
 
+  console.log("📦 fetchNextTask response:", {
+    runnerName: CONFIG.RUNNER_NAME,
+    accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
+    data
+  });
+  
   if (!data.ok) {
     throw new Error(data.error || "Backend error");
   }
-
+  
   return data;
 }
 
