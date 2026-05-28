@@ -447,9 +447,21 @@ function getSearchFallbackFailureAction() {
     return "STOCKX_LIMITS_CALCULATION_FAILED";
   }
 
-  if (currentTask?.type === "REMOVE_SECOND_BID") return "SECOND_BID_REMOVE_FAILED";
-  if (currentTask?.type === "PLACE_SECOND_BID") return "SECOND_BID_FAILED";
-  if (currentTask?.type === "REMOVE") return "BID_REMOVE_FAILED";
+  // second bid remove → beschouwen als removed/not found
+  if (currentTask?.type === "REMOVE_SECOND_BID") {
+    return "SECOND_BID_REMOVED";
+  }
+
+  // second bid place
+  if (currentTask?.type === "PLACE_SECOND_BID") {
+    return "SECOND_BID_FAILED";
+  }
+
+  // normal remove → bid bestaat blijkbaar niet meer
+  if (currentTask?.type === "REMOVE") {
+    return "BID_REMOVE_NOT_FOUND";
+  }
+
   return "BID_UPDATE_FAILED";
 }
 
