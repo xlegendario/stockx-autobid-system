@@ -1522,30 +1522,43 @@ function textHasExactEuSize(text, size) {
 }
 
 function scrollSizeDropdownDown() {
-  const candidates = Array.from(
-    document.querySelectorAll('[role="dialog"] div, [role="listbox"]')
-  )
-    .filter((el) => {
-      const style = window.getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
+  const scrollables = Array.from(document.querySelectorAll("*")).filter((el) => {
+    const style = window.getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const text = normalizeText(el.innerText || "");
 
-      return (
-        style.visibility !== "hidden" &&
-        style.display !== "none" &&
-        rect.width > 250 &&
-        rect.height > 250 &&
-        el.scrollHeight > el.clientHeight
-      );
-    });
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width < 300 || rect.height < 250) return false;
+    if (el.scrollHeight <= el.clientHeight + 20) return false;
 
-  const dropdown = candidates.sort((a, b) => {
-    return (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight);
-  })[0];
+    return (
+      text.includes("size and conversions") &&
+      text.includes("eu ") &&
+      text.includes("us m")
+    );
+  });
 
-  if (!dropdown) return false;
+  const dropdown = scrollables[0];
 
-  dropdown.scrollTop += 300;
+  if (!dropdown) {
+    console.log("Size dropdown scroll container not found");
+    return false;
+  }
+
+  console.log("Scrolling size dropdown", {
+    before: dropdown.scrollTop,
+    clientHeight: dropdown.clientHeight,
+    scrollHeight: dropdown.scrollHeight
+  });
+
+  dropdown.scrollTop += 450;
+  dropdown.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 450 }));
   dropdown.dispatchEvent(new Event("scroll", { bubbles: true }));
+
+  console.log("Scrolled size dropdown", {
+    after: dropdown.scrollTop
+  });
+
   return true;
 }
 
@@ -1648,7 +1661,7 @@ function openSizeDropdownAndSelectForRemove(targetSize) {
   }, 1000);
 }
 
-function selectSizeFromDropdownForRemove(targetSize) {
+function selectSizeFromDropdownForRemove(targetSize, attempt = 0) {
   const normalizedTarget = normalizeText(targetSize);
   console.log("🧹 Trying to select size from dropdown for REMOVE:", normalizedTarget);
 
@@ -1669,9 +1682,27 @@ function selectSizeFromDropdownForRemove(targetSize) {
   });
 
   if (candidates.length === 0) {
+    if (attempt > 15) {
+      if (currentTask?.type === "REMOVE_SECOND_BID") {
+        reportTaskResult("SECOND_BID_REMOVED", {
+          errorMessage: `Second bid size ${targetSize} not found after scrolling size dropdown; treating as already removed`
+        });
+        return;
+      }
+
+      reportTaskResult("BID_REMOVE_NOT_FOUND", {
+        errorMessage: `Remove size ${targetSize} not found after scrolling size dropdown`
+      });
+      return;
+    }
+
     console.log("REMOVE: size option not found yet, scrolling dropdown and retrying...");
     scrollSizeDropdownDown();
-    setTimeout(() => selectSizeFromDropdownForRemove(targetSize), 700);
+
+    setTimeout(() => {
+      selectSizeFromDropdownForRemove(targetSize, attempt + 1);
+    }, 1000);
+
     return;
   }
 
