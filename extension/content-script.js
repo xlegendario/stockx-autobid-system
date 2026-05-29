@@ -3166,9 +3166,6 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0, retryCount
       }
     });
 
-    currentTask = null;
-    await chrome.storage.local.remove("currentTask");
-
     window.location.href = "https://stockx.com/buying/orders";
     return;
   }
