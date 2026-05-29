@@ -1523,43 +1523,52 @@ function textHasExactEuSize(text, size) {
 
 function scrollSizeDropdownDown() {
   const scrollables = Array.from(document.querySelectorAll("*")).filter((el) => {
+    if (el === document.body || el === document.documentElement) return false;
+
     const style = window.getComputedStyle(el);
     const rect = el.getBoundingClientRect();
     const text = normalizeText(el.innerText || "");
 
     if (style.visibility === "hidden" || style.display === "none") return false;
-    if (rect.width < 300 || rect.height < 250) return false;
+    if (rect.width < 250 || rect.height < 120) return false;
+    if (rect.left < window.innerWidth * 0.45) return false;
     if (el.scrollHeight <= el.clientHeight + 20) return false;
 
     return (
-      text.includes("size and conversions") &&
-      text.includes("eu ") &&
-      text.includes("us m")
+      text.includes("size and conversions") ||
+      text.includes("eu 46") ||
+      text.includes("eu 47") ||
+      text.includes("eu 48") ||
+      text.includes("eu 49")
     );
   });
 
-  const dropdown = scrollables[0];
+  const dropdown = scrollables.sort((a, b) => {
+    return (b.scrollHeight - b.clientHeight) - (a.scrollHeight - a.clientHeight);
+  })[0];
 
   if (!dropdown) {
     console.log("Size dropdown scroll container not found");
     return false;
   }
 
-  console.log("Scrolling size dropdown", {
-    before: dropdown.scrollTop,
+  const before = dropdown.scrollTop;
+
+  dropdown.scrollTop = Math.min(
+    dropdown.scrollTop + 450,
+    dropdown.scrollHeight - dropdown.clientHeight
+  );
+
+  dropdown.dispatchEvent(new Event("scroll", { bubbles: true }));
+
+  console.log("Scrolled size dropdown", {
+    before,
+    after: dropdown.scrollTop,
     clientHeight: dropdown.clientHeight,
     scrollHeight: dropdown.scrollHeight
   });
 
-  dropdown.scrollTop += 450;
-  dropdown.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 450 }));
-  dropdown.dispatchEvent(new Event("scroll", { bubbles: true }));
-
-  console.log("Scrolled size dropdown", {
-    after: dropdown.scrollTop
-  });
-
-  return true;
+  return dropdown.scrollTop !== before;
 }
 
 function openSizeDropdownAndSelect(targetSize) {
