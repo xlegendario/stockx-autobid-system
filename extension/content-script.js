@@ -1503,6 +1503,27 @@ function normalizeText(value) {
     .replace(",", ".");
 }
 
+function isReviewOfferButtonText(value) {
+  const text = normalizeText(value);
+
+  return (
+    text.includes("review bid") ||
+    text.includes("review offer") ||
+    text.includes("review order") ||
+    text.includes("review purchase")
+  );
+}
+
+function isConfirmOfferButtonText(value) {
+  const text = normalizeText(value);
+
+  return (
+    text.includes("confirm bid") ||
+    text.includes("confirm offer") ||
+    text.includes("place order")
+  );
+}
+
 function getExpectedEuSizeText(size) {
   const normalized = normalizeText(size);
   return `eu ${normalized}`;
@@ -1903,8 +1924,10 @@ function waitForReturnToProductPageAfterRemove(attempt = 0) {
     !isBuyPage &&
     (
       pageText.includes("buy or bid") ||
+      pageText.includes("make offer") ||
       pageText.includes("sell or ask") ||
       pageText.includes("your current bid") ||
+      pageText.includes("your current offer") ||
       pageText.includes("size")
     );
 
@@ -2009,7 +2032,9 @@ function checkIfBidRemovedForSelectedSize(attempt = 0) {
     return text === "update" || text.includes("update");
   });
 
-  const hasCurrentBidText = pageText.includes("your current bid");
+  const hasCurrentBidText =
+    pageText.includes("your current bid") ||
+    pageText.includes("your current offer");
 
   if (!updateBtn && !hasCurrentBidText) {
     console.log("✅ Bid removed successfully for target size");
@@ -2413,7 +2438,7 @@ function findVisibleReviewButtonForSafetyCheck() {
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
 
-    return text.includes("review bid") || text.includes("review order");
+    return isReviewOfferButtonText(text);
   });
 }
 
@@ -2697,10 +2722,9 @@ function handleBuyPage(attempt = 0) {
   }
 
   const priceInput = findBidInput();
-  const hasReviewActionButton = Array.from(document.querySelectorAll("button")).some((btn) => {
-    const text = (btn.innerText || "").trim().toLowerCase();
-    return text.includes("review bid") || text.includes("review order");
-  });
+  const hasReviewActionButton = Array.from(
+    document.querySelectorAll("button")
+  ).some((btn) => isReviewOfferButtonText(btn.innerText));
 
   if (priceInput && hasReviewActionButton) {
     console.log("Bid input screen detected directly");
@@ -2747,36 +2771,64 @@ function handleBuyPage(attempt = 0) {
 }
 
 function findBidInput() {
-  const inputs = Array.from(document.querySelectorAll("input"));
-
-  return inputs.find((input) => {
-    const type = (input.getAttribute("type") || "").toLowerCase();
-    const inputMode = (input.getAttribute("inputmode") || "").toLowerCase();
-    const placeholder = (input.getAttribute("placeholder") || "").toLowerCase();
-    const ariaLabel = (input.getAttribute("aria-label") || "").toLowerCase();
-
+  const inputs = Array.from(
+    document.querySelectorAll(
+      'input[type="text"], input[type="number"], input[inputmode="numeric"], input[inputmode="decimal"], input:not([type])'
+    )
+  ).filter((input) => {
     const rect = input.getBoundingClientRect();
-    const isVisible =
-      rect.width > 0 &&
-      rect.height > 0 &&
-      window.getComputedStyle(input).visibility !== "hidden" &&
-      window.getComputedStyle(input).display !== "none";
+    const style = window.getComputedStyle(input);
 
-    if (!isVisible) return false;
+    return (
+      style.visibility !== "hidden" &&
+      style.display !== "none" &&
+      rect.width > 100 &&
+      rect.height > 20 &&
+      !input.disabled
+    );
+  });
 
-    const looksNumeric =
+  const explicitMatch = inputs.find((input) => {
+    const type = normalizeText(input.getAttribute("type") || "");
+    const inputMode = normalizeText(input.getAttribute("inputmode") || "");
+    const placeholder = normalizeText(input.getAttribute("placeholder") || "");
+    const ariaLabel = normalizeText(input.getAttribute("aria-label") || "");
+    const name = normalizeText(input.getAttribute("name") || "");
+
+    return (
       type === "number" ||
       inputMode === "numeric" ||
-      inputMode === "decimal";
-
-    const looksLikeBidField =
+      inputMode === "decimal" ||
       placeholder.includes("price") ||
       placeholder.includes("bid") ||
+      placeholder.includes("offer") ||
       ariaLabel.includes("price") ||
-      ariaLabel.includes("bid");
-
-    return looksNumeric || looksLikeBidField;
+      ariaLabel.includes("bid") ||
+      ariaLabel.includes("offer") ||
+      name.includes("price") ||
+      name.includes("bid") ||
+      name.includes("offer")
+    );
   });
+
+  if (explicitMatch) return explicitMatch;
+
+  return inputs.find((input) => {
+    const container =
+      input.closest("form") ||
+      input.closest('[role="dialog"]') ||
+      input.parentElement?.parentElement ||
+      input.parentElement;
+
+    const surroundingText = normalizeText(container?.innerText || "");
+
+    return (
+      surroundingText.includes("name your price") ||
+      surroundingText.includes("pricing options") ||
+      surroundingText.includes("review offer") ||
+      surroundingText.includes("review bid")
+    );
+  }) || null;
 }
 
 function formatBidValue(value) {
@@ -2908,8 +2960,7 @@ function waitForReviewBidEnabled(attempt = 0) {
   const buttons = Array.from(document.querySelectorAll("button"));
 
   const btn = buttons.find((b) => {
-    const text = (b.innerText || "").trim().toLowerCase();
-    return text.includes("review bid") || text.includes("review order");
+    return isReviewOfferButtonText(b.innerText);
   });
 
   if (!btn) {
@@ -2963,8 +3014,7 @@ async function clickReviewBid(attempt = 0) {
   const buttons = Array.from(document.querySelectorAll("button"));
 
   const btn = buttons.find((b) => {
-    const text = (b.innerText || "").trim().toLowerCase();
-    return text.includes("review bid") || text.includes("review order");
+    return isReviewOfferButtonText(b.innerText);
   });
 
   if (!btn) {
@@ -2995,8 +3045,7 @@ async function clickConfirmBid(attempt = 0) {
   const buttons = Array.from(document.querySelectorAll("button"));
 
   const btn = buttons.find((b) => {
-    const text = (b.innerText || "").trim().toLowerCase();
-    return text.includes("confirm bid") || text.includes("place order");
+    return isConfirmOfferButtonText(b.innerText);
   });
 
   if (!btn) {
@@ -3097,7 +3146,7 @@ function findVisibleReviewActionButton() {
     if (rect.width <= 0 || rect.height <= 0) return false;
     if (btn.disabled || btn.getAttribute("aria-disabled") === "true") return false;
 
-    return text.includes("review bid") || text.includes("review order");
+    return isReviewOfferButtonText(text);
   });
 }
 
@@ -3133,7 +3182,10 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0, retryCount
       return;
     }
 
-    if (normalized.includes("confirm bid")) {
+    if (
+      normalized.includes("confirm bid") ||
+      normalized.includes("confirm offer")
+    ) {
       reportTaskResult(getBidFailureAction(), {
         errorMessage: "No success/failure screen detected after Confirm Bid"
       });
@@ -3148,7 +3200,10 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0, retryCount
   const normalizedFinalButtonText = String(finalButtonText || "").trim().toLowerCase();
 
   if (
-    normalizedFinalButtonText.includes("confirm bid") &&
+    (
+      normalizedFinalButtonText.includes("confirm bid") ||
+      normalizedFinalButtonText.includes("confirm offer")
+    ) &&
     hasRetryableStockxIssue()
   ) {
     const reviewBtn = findVisibleReviewActionButton();
@@ -3227,9 +3282,11 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0, retryCount
 
   if (
     pageText.includes("your bid is live") ||
-    (pageText.includes("success") && pageText.includes("your bid"))
+    pageText.includes("your offer is live") ||
+    (pageText.includes("success") && pageText.includes("your bid")) ||
+    (pageText.includes("success") && pageText.includes("your offer"))
   ) {
-    console.log("✅ Bid success page detected");
+    console.log("✅ Bid/Offer success page detected");
     reportTaskResult(getBidSuccessAction());
     return;
   }
