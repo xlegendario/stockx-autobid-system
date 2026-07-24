@@ -1797,7 +1797,13 @@ function waitForRemoveEditPage(attempt = 0) {
 
   const deleteBtn = buttons.find((btn) => {
     const text = normalizeText(btn.innerText);
-    return text === "delete bid" || text.includes("delete bid");
+  
+    return (
+      text === "delete bid" ||
+      text.includes("delete bid") ||
+      text === "delete offer" ||
+      text.includes("delete offer")
+    );
   });
 
   if (deleteBtn) {
@@ -1808,7 +1814,10 @@ function waitForRemoveEditPage(attempt = 0) {
 
   const looksLikeEditPage =
     pageText.includes("delete bid") ||
+    pageText.includes("delete offer") ||
     pageText.includes("review bid") ||
+    pageText.includes("editing your offer") ||
+    pageText.includes("update offer") ||
     (pageText.includes("bid") && pageText.includes("sell faster"));
 
   if (looksLikeEditPage) {
@@ -1836,7 +1845,13 @@ function clickDeleteBidButtonForRemove(attempt = 0) {
 
   const deleteBtn = buttons.find((btn) => {
     const text = normalizeText(btn.innerText);
-    return text === "delete bid" || text.includes("delete bid");
+  
+    return (
+      text === "delete bid" ||
+      text.includes("delete bid") ||
+      text === "delete offer" ||
+      text.includes("delete offer")
+    );
   });
 
   if (!deleteBtn) {
