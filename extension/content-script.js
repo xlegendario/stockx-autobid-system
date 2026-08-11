@@ -2712,37 +2712,50 @@ function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid, testBidSourc
 
 function findVisibleBuyNowPricingOption() {
   const candidates = Array.from(
-    document.querySelectorAll("button, [role='button'], div")
+    document.querySelectorAll(
+      "button, [role='button'], div, li, article"
+    )
   ).filter((el) => {
-    const text = normalizeText(el.innerText || "");
+    const rawText = String(el.innerText || "").trim();
+    const text = normalizeText(rawText);
+
     const rect = el.getBoundingClientRect();
     const style = window.getComputedStyle(el);
 
     if (!text) return false;
-    if (!text.includes("buy now")) return false;
-    if (!text.includes("€")) return false;
-
     if (style.visibility === "hidden" || style.display === "none") return false;
     if (rect.width <= 0 || rect.height <= 0) return false;
+
+    if (!text.includes("buy now")) return false;
+
+    // Voorkom dat we een enorme parent/container pakken.
+    if (rawText.length > 250) return false;
 
     return true;
   });
 
   const parsed = candidates
     .map((el) => {
-      const price = parseMoneyValue(el.innerText || "");
+      const rawText = el.innerText || "";
+
+      const match = rawText.match(/€\s*([\d.,]+)/i);
+
+      const price = match?.[1]
+        ? parseMoneyValue(match[1])
+        : null;
 
       return {
         el,
-        price
+        price,
+        text: rawText
       };
     })
     .filter((item) => Number.isFinite(item.price));
 
-  if (parsed.length === 0) return null;
+  if (parsed.length === 0) {
+    return null;
+  }
 
-  // Pak het kleinste element zodat we de echte Buy Now pricing tile/button
-  // pakken en niet een grote parent container met meerdere prijzen.
   parsed.sort((a, b) => {
     const ar = a.el.getBoundingClientRect();
     const br = b.el.getBoundingClientRect();
@@ -2753,11 +2766,10 @@ function findVisibleBuyNowPricingOption() {
   return parsed[0];
 }
 
-async function switchToBuyNowIfCheaperOrEqual() {
+async function switchToBuyNowIfCheaperOrEqual(attempt = 0) {
   if (!currentTask) return false;
 
-  // De speciale first-bid/second-bid check heeft al zijn eigen Buy Now-logica.
-  // Die laten we volledig met rust.
+  // Speciale first-order / second-bid setup heeft zijn eigen bestaande flow.
   if (currentTask.type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK") {
     return false;
   }
@@ -2778,9 +2790,22 @@ async function switchToBuyNowIfCheaperOrEqual() {
 
   const buyNow = findVisibleBuyNowPricingOption();
 
-  // Buy Now leeg / niet beschikbaar → normale offer-flow.
   if (!buyNow || !Number.isFinite(buyNow.price)) {
-    console.log("💶 No Buy Now price found; continuing normal Offer flow");
+    // Geef StockX eerst tijd om de pricing options te renderen.
+    if (attempt < 10) {
+      console.log(
+        `💶 Buy Now price not available yet; waiting before Offer flow (${attempt + 1}/10)`
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      return switchToBuyNowIfCheaperOrEqual(attempt + 1);
+    }
+
+    console.log(
+      "💶 No Buy Now price found after waiting; continuing normal Offer flow"
+    );
+
     return false;
   }
 
@@ -2791,7 +2816,10 @@ async function switchToBuyNowIfCheaperOrEqual() {
   });
 
   if (buyNow.price > intendedOffer) {
-    console.log("✅ Buy Now is above intended Offer; continuing Offer flow");
+    console.log(
+      "✅ Buy Now is above intended Offer; continuing normal Offer flow"
+    );
+
     return false;
   }
 
@@ -2800,7 +2828,6 @@ async function switchToBuyNowIfCheaperOrEqual() {
     buyNowPrice: buyNow.price
   });
 
-  // Bestaande instant-order flow gebruikt dit veld.
   currentTask.firstBuyNowPrice = buyNow.price;
 
   await chrome.storage.local.set({ currentTask });
