@@ -1474,17 +1474,11 @@ async function handleInstantOrderDetailPage(attempt = 0) {
     finalStockXPrice
   });
 
-  let restoredTaskType = "PLACE_OR_UPDATE";
-
-  if (meta.resultAction === "FIRST_ORDER_PLACED") {
-    restoredTaskType = "PLACE_OR_BUY_WITH_SECOND_BID_CHECK";
-  } else if (meta.resultAction === "SECOND_ORDER_PLACED") {
-    restoredTaskType = "PLACE_SECOND_BID";
-  }
-  
   currentTask = {
     recordId: meta.recordId,
-    type: restoredTaskType,
+    type: meta.resultAction === "FIRST_ORDER_PLACED"
+      ? "PLACE_OR_BUY_WITH_SECOND_BID_CHECK"
+      : "PLACE_OR_UPDATE",
     maxBid: null
   };
 
