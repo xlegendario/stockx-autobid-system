@@ -1474,11 +1474,17 @@ async function handleInstantOrderDetailPage(attempt = 0) {
     finalStockXPrice
   });
 
+  let restoredTaskType = "PLACE_OR_UPDATE";
+
+  if (meta.resultAction === "FIRST_ORDER_PLACED") {
+    restoredTaskType = "PLACE_OR_BUY_WITH_SECOND_BID_CHECK";
+  } else if (meta.resultAction === "SECOND_ORDER_PLACED") {
+    restoredTaskType = "PLACE_SECOND_BID";
+  }
+  
   currentTask = {
     recordId: meta.recordId,
-    type: meta.resultAction === "FIRST_ORDER_PLACED"
-      ? "PLACE_OR_BUY_WITH_SECOND_BID_CHECK"
-      : "PLACE_OR_UPDATE",
+    type: restoredTaskType,
     maxBid: null
   };
 
@@ -2254,7 +2260,7 @@ function waitForReviewOrderEnabledForInstantBuy(attempt = 0) {
 
 function waitForReviewOrderEnabledAfterBuyNowOption(attempt = 0) {
   if (attempt > 20) {
-    reportTaskResult("BID_UPDATE_FAILED", {
+    reportTaskResult(getBidFailureAction(), {
       errorMessage: "Review Order button not found after selecting Buy Now option"
     });
     return;
@@ -2710,6 +2716,110 @@ function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid, testBidSourc
   });
 }
 
+function findVisibleBuyNowPricingOption() {
+  const candidates = Array.from(
+    document.querySelectorAll("button, [role='button'], div")
+  ).filter((el) => {
+    const text = normalizeText(el.innerText || "");
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+
+    if (!text) return false;
+    if (!text.includes("buy now")) return false;
+    if (!text.includes("€")) return false;
+
+    if (style.visibility === "hidden" || style.display === "none") return false;
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    return true;
+  });
+
+  const parsed = candidates
+    .map((el) => {
+      const price = parseMoneyValue(el.innerText || "");
+
+      return {
+        el,
+        price
+      };
+    })
+    .filter((item) => Number.isFinite(item.price));
+
+  if (parsed.length === 0) return null;
+
+  // Pak het kleinste element zodat we de echte Buy Now pricing tile/button
+  // pakken en niet een grote parent container met meerdere prijzen.
+  parsed.sort((a, b) => {
+    const ar = a.el.getBoundingClientRect();
+    const br = b.el.getBoundingClientRect();
+
+    return (ar.width * ar.height) - (br.width * br.height);
+  });
+
+  return parsed[0];
+}
+
+async function switchToBuyNowIfCheaperOrEqual() {
+  if (!currentTask) return false;
+
+  // De speciale first-bid/second-bid check heeft al zijn eigen Buy Now-logica.
+  // Die laten we volledig met rust.
+  if (currentTask.type === "PLACE_OR_BUY_WITH_SECOND_BID_CHECK") {
+    return false;
+  }
+
+  if (
+    currentTask.type !== "PLACE_OR_UPDATE" &&
+    currentTask.type !== "PLACE_SECOND_BID"
+  ) {
+    return false;
+  }
+
+  const intendedOffer = Number(currentTask.maxBid);
+
+  if (!Number.isFinite(intendedOffer)) {
+    console.log("Buy Now safety check skipped: invalid intended offer");
+    return false;
+  }
+
+  const buyNow = findVisibleBuyNowPricingOption();
+
+  // Buy Now leeg / niet beschikbaar → normale offer-flow.
+  if (!buyNow || !Number.isFinite(buyNow.price)) {
+    console.log("💶 No Buy Now price found; continuing normal Offer flow");
+    return false;
+  }
+
+  console.log("💶 Buy Now safety check:", {
+    taskType: currentTask.type,
+    intendedOffer,
+    buyNowPrice: buyNow.price
+  });
+
+  if (buyNow.price > intendedOffer) {
+    console.log("✅ Buy Now is above intended Offer; continuing Offer flow");
+    return false;
+  }
+
+  console.log("🔥 Buy Now is <= intended Offer; switching to instant purchase", {
+    intendedOffer,
+    buyNowPrice: buyNow.price
+  });
+
+  // Bestaande instant-order flow gebruikt dit veld.
+  currentTask.firstBuyNowPrice = buyNow.price;
+
+  await chrome.storage.local.set({ currentTask });
+
+  clickElement(buyNow.el);
+
+  setTimeout(() => {
+    waitForReviewOrderEnabledAfterBuyNowOption();
+  }, 1500);
+
+  return true;
+}
+
 function handleBuyPage(attempt = 0) {
   if (!currentTask) {
     console.log("No currentTask available on buy page");
@@ -2727,8 +2837,18 @@ function handleBuyPage(attempt = 0) {
   ).some((btn) => isReviewOfferButtonText(btn.innerText));
 
   if (priceInput && hasReviewActionButton) {
-    console.log("Bid input screen detected directly");
-    setTimeout(() => fillBidPrice(), 800);
+    console.log("Offer input screen detected directly");
+  
+    setTimeout(async () => {
+      const switchedToBuyNow = await switchToBuyNowIfCheaperOrEqual();
+  
+      if (switchedToBuyNow) {
+        return;
+      }
+  
+      fillBidPrice();
+    }, 800);
+  
     return;
   }
 
@@ -2765,7 +2885,13 @@ function handleBuyPage(attempt = 0) {
   console.log("🔥 Clicking BUY page size:", match.innerText);
   match.click();
 
-  setTimeout(() => {
+  setTimeout(async () => {
+    const switchedToBuyNow = await switchToBuyNowIfCheaperOrEqual();
+  
+    if (switchedToBuyNow) {
+      return;
+    }
+  
     fillBidPrice();
   }, 1500);
 }
