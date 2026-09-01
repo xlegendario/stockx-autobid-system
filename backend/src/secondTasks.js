@@ -1,4 +1,4 @@
-import { resolveStockxUrlBySku } from "./retailed.js";
+import { resolveStockxUrlBySku } from "./stockx.js";
 import { updateOrder } from "./airtable.js";
 
 function normalizeLookup(value) {
