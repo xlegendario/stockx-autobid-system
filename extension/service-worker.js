@@ -8,10 +8,28 @@ const LOOP_DELAY_MS = 8000;
 const ERROR_RETRY_DELAY_MS = 15000;
 const ORDER_PLACED_NEXT_TASK_DELAY_MS = 8000;
 const BID_RESULT_NEXT_TASK_DELAY_MS = 4000;
-const TASK_TIMEOUT_MS = 120000; // 2 minuten
+// A place flow can legitimately take ~2 minutes (retries on input, review,
+// confirm and the outcome screen), so the timeout leaves room for that.
+const TASK_TIMEOUT_MS = 180000; // 3 minuten
+const FETCH_TIMEOUT_MS = 30000;
+const RUN_LOOP_STALE_MS = 90000;
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
 
+/*
+ * The runner loop is a chain of one-shot alarms, and the chain breaks
+ * whenever a task is opened: from then on only the page reporting back
+ * restarts it. A page that never reports (load event missed, SPA navigation
+ * not followed, captcha, StockX error page) left the runner idle until
+ * someone clicked Start Runner again.
+ *
+ * This periodic alarm does not depend on anything finishing. Every minute it
+ * runs the loop, which times out a stuck task and moves on.
+ */
+const WATCHDOG_ALARM_NAME = "stockx-runner-watchdog";
+const WATCHDOG_PERIOD_MINUTES = 1;
+
 let currentTaskStartedAt = null;
+let runLoopStartedAt = null;
 
 function resetInProgressState() {
   isTaskInProgress = false;
@@ -27,6 +45,111 @@ async function clearCurrentTaskState() {
   });
 }
 
+async function ensureWatchdog() {
+  const existing = await chrome.alarms.get(WATCHDOG_ALARM_NAME);
+  if (existing) return;
+
+  await chrome.alarms.create(WATCHDOG_ALARM_NAME, {
+    delayInMinutes: WATCHDOG_PERIOD_MINUTES,
+    periodInMinutes: WATCHDOG_PERIOD_MINUTES
+  });
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`Request timed out after ${FETCH_TIMEOUT_MS}ms: ${url}`);
+    }
+
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/*
+ * The failure action a page would have reported for this task type.
+ *
+ * Reporting it on timeout matters for more than bookkeeping: verify and sync
+ * tasks are picked by oldest LastSyncAt, so a task that times out without
+ * writing anything is handed out again straight away and blocks the queue.
+ */
+function getTimeoutFailureAction(type) {
+  switch (type) {
+    case "CALCULATE_STOCKX_LIMITS":
+      return "STOCKX_LIMITS_CALCULATION_FAILED";
+    case "PLACE_SECOND_BID":
+      return "SECOND_BID_FAILED";
+    case "REMOVE":
+      return "BID_REMOVE_FAILED";
+    case "REMOVE_SECOND_BID":
+      return "SECOND_BID_REMOVE_FAILED";
+    case "VERIFY_BID_STATUS":
+    case "VERIFY_SECOND_BID_STATUS":
+      return "VERIFY_FAILED";
+    case "SYNC_ORDER_STATUS":
+      return "ORDER_STATUS_SYNC_FAILED";
+    case "SYNC_SECOND_ORDER_STATUS":
+      return "SECOND_ORDER_STATUS_SYNC_FAILED";
+    default:
+      return "BID_UPDATE_FAILED";
+  }
+}
+
+async function describeRunnerTab() {
+  const { runnerTabId } = await chrome.storage.local.get(["runnerTabId"]);
+  if (!runnerTabId) return "no runner tab";
+
+  try {
+    const tab = await chrome.tabs.get(runnerTabId);
+    return `${tab.url || "?"} (${tab.title || "no title"})`;
+  } catch {
+    return "runner tab closed";
+  }
+}
+
+async function reportTimedOutTask(task) {
+  const data = await chrome.storage.local.get(["pendingInstantOrderMeta"]);
+  const instantMeta = data.pendingInstantOrderMeta;
+  const where = await describeRunnerTab();
+
+  let payload;
+
+  // The order went through and we have its number; only the price lookup on
+  // the orders page did not finish. Reporting a failure here would put the
+  // record back in the queue and the next run would buy the pair again.
+  if (instantMeta?.orderNumber && instantMeta.recordId === task.recordId) {
+    payload = {
+      recordId: task.recordId,
+      type: task.type,
+      action: instantMeta.resultAction || "ORDER_PLACED_WITH_DETAILS",
+      orderNumber: instantMeta.orderNumber,
+      firstBuyNowPrice: instantMeta.firstBuyNowPrice || null,
+      errorMessage: `Runner timeout before final price was read; last page: ${where}`
+    };
+
+    await chrome.storage.local.remove(["pendingInstantOrderMeta"]);
+  } else {
+    payload = {
+      recordId: task.recordId,
+      type: task.type,
+      action: getTimeoutFailureAction(task.type),
+      errorMessage: `Runner timeout: page did not report a result within ${TASK_TIMEOUT_MS / 1000}s; last page: ${where}`
+    };
+  }
+
+  try {
+    await submitTaskResult(payload);
+  } catch (err) {
+    console.error("Could not report timed-out task:", err);
+  }
+}
+
 async function recoverIfTaskTimedOut() {
   if (!isTaskInProgress) return false;
   if (!currentTaskStartedAt) return false;
@@ -34,9 +157,24 @@ async function recoverIfTaskTimedOut() {
   const elapsed = Date.now() - currentTaskStartedAt;
   if (elapsed < TASK_TIMEOUT_MS) return false;
 
-  console.warn("Task timed out, resetting runner state");
+  console.warn("Task timed out, reporting failure and resetting runner state");
+
+  const { currentTask } = await chrome.storage.local.get(["currentTask"]);
 
   await clearCurrentTaskState();
+
+  if (currentTask?.recordId) {
+    await reportTimedOutTask(currentTask);
+  }
+
+  const { timeoutRecoveries = 0 } = await chrome.storage.local.get(["timeoutRecoveries"]);
+  await chrome.storage.local.set({
+    timeoutRecoveries: timeoutRecoveries + 1,
+    lastTimeoutAt: new Date().toISOString(),
+    lastTimeoutTask: currentTask
+      ? { recordId: currentTask.recordId, type: currentTask.type }
+      : null
+  });
 
   return true;
 }
@@ -167,13 +305,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "GET_RUNNER_STATUS") {
     loadState().then(async () => {
-      const data = await chrome.storage.local.get(["forceStop"]);
+      const data = await chrome.storage.local.get([
+        "forceStop",
+        "lastLoopAt",
+        "lastResultAt",
+        "lastResultAction",
+        "lastErrorAt",
+        "lastError",
+        "timeoutRecoveries",
+        "lastTimeoutAt",
+        "lastTimeoutTask"
+      ]);
+      const watchdog = await chrome.alarms.get(WATCHDOG_ALARM_NAME);
 
       sendResponse({
         ok: true,
         isRunnerEnabled,
         isTaskInProgress,
-        forceStop: data.forceStop === true
+        forceStop: data.forceStop === true,
+        watchdogActive: !!watchdog,
+        lastLoopAt: data.lastLoopAt || null,
+        lastResultAt: data.lastResultAt || null,
+        lastResultAction: data.lastResultAction || null,
+        lastErrorAt: data.lastErrorAt || null,
+        lastError: data.lastError || null,
+        timeoutRecoveries: data.timeoutRecoveries || 0,
+        lastTimeoutAt: data.lastTimeoutAt || null,
+        lastTimeoutTask: data.lastTimeoutTask || null
       });
     });
 
@@ -196,66 +354,90 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "TASK_COMPLETED") {
-    submitTaskResult(message.payload)
-      .then(async (result) => {
-        await clearCurrentTaskState();
-
-        if (isRunnerEnabled) {
-          try {
-            const action = message.payload?.action;
-
-            const delay = isImmediateOrderPlacementAction(action)
-              ? ORDER_PLACED_NEXT_TASK_DELAY_MS
-              : isBidResultAction(action)
-                ? BID_RESULT_NEXT_TASK_DELAY_MS
-                : 1000;
-
-            await scheduleNextRun(delay);
-
-            setTimeout(() => {
-              runLoop().catch(async (err) => {
-                console.error("Runner loop error after task completion:", err);
-
-                clearCurrentTaskState().then(async () => {
-                  if (isRunnerEnabled) {
-                    await scheduleNextRun(ERROR_RETRY_DELAY_MS);
-                  }
-                });
-              });
-            }, delay);
-          } catch (err) {
-            console.error("Runner loop scheduling error after success:", err);
-            await clearCurrentTaskState();
-
-            if (isRunnerEnabled) {
-              await scheduleNextRun(ERROR_RETRY_DELAY_MS);
-            }
-          }
-        }
-
-        sendResponse({ ok: true, result });
-      })
-      .catch(async (err) => {
-        await clearCurrentTaskState();
-
-        if (isRunnerEnabled) {
-          await scheduleNextRun(ERROR_RETRY_DELAY_MS);
-        }
-
-        sendResponse({ ok: false, error: err.message });
-      });
+    handleTaskCompleted(message.payload)
+      .then((response) => sendResponse(response))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
 
     return true;
   }
 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== RUNNER_ALARM_NAME) return;
+/*
+ * A page from an earlier task can still report after that task timed out and
+ * the next one started. Its result is real, so it still goes to the backend,
+ * but it must not clear the task that is running now.
+ */
+async function isReportForCurrentTask(payload) {
+  if (!payload?.runId) return true;
 
-  console.log("⏰ Alarm fired → running loop");
+  const { currentTask } = await chrome.storage.local.get(["currentTask"]);
+  return !currentTask || currentTask.runId === payload.runId;
+}
+
+async function handleTaskCompleted(payload) {
+  if (!(await isReportForCurrentTask(payload))) {
+    console.warn("Late result from an earlier task, submitting without touching the current one", {
+      recordId: payload.recordId,
+      action: payload.action
+    });
+
+    const result = await submitTaskResult(payload);
+    return { ok: true, result, stale: true };
+  }
+
+  await loadState();
+
+  try {
+    const result = await submitTaskResult(payload);
+
+    await clearCurrentTaskState();
+    await chrome.storage.local.set({
+      lastResultAt: new Date().toISOString(),
+      lastResultAction: payload?.action || null
+    });
+
+    if (isRunnerEnabled) {
+      const action = payload?.action;
+
+      const delay = isImmediateOrderPlacementAction(action)
+        ? ORDER_PLACED_NEXT_TASK_DELAY_MS
+        : isBidResultAction(action)
+          ? BID_RESULT_NEXT_TASK_DELAY_MS
+          : 1000;
+
+      await scheduleNextRun(delay);
+    }
+
+    return { ok: true, result };
+  } catch (err) {
+    console.error("Submitting task result failed:", err);
+
+    await clearCurrentTaskState();
+    await chrome.storage.local.set({
+      lastErrorAt: new Date().toISOString(),
+      lastError: `Result submit failed: ${err.message}`
+    });
+
+    if (isRunnerEnabled) {
+      await scheduleNextRun(ERROR_RETRY_DELAY_MS);
+    }
+
+    return { ok: false, error: err.message };
+  }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== RUNNER_ALARM_NAME && alarm.name !== WATCHDOG_ALARM_NAME) return;
+
+  console.log(`⏰ Alarm fired (${alarm.name}) → running loop`);
 
   runLoop().catch(async (err) => {
     console.error("Runner loop error:", err);
+
+    await chrome.storage.local.set({
+      lastErrorAt: new Date().toISOString(),
+      lastError: err.message
+    });
 
     await clearCurrentTaskState();
 
@@ -269,6 +451,7 @@ async function startRunner() {
   isRunnerEnabled = true;
 
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
+  await ensureWatchdog();
 
   await chrome.storage.local.set({
     currentTask: null,
@@ -304,6 +487,7 @@ async function stopRunner() {
   isRunnerEnabled = false;
   await saveState(false);
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
+  await chrome.alarms.clear(WATCHDOG_ALARM_NAME);
   await chrome.storage.local.set({ runnerTabId: null });
 
   return {
@@ -320,6 +504,7 @@ async function forceStopRunner() {
   resetInProgressState();
 
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
+  await chrome.alarms.clear(WATCHDOG_ALARM_NAME);
 
   await chrome.storage.local.set({
     runnerEnabled: false,
@@ -350,12 +535,17 @@ async function forceStopRunner() {
 }
 
 async function runLoop() {
-  if (isRunLoopActive) {
+  // A loop that hangs on an API call must not lock out every later trigger.
+  const isStale =
+    runLoopStartedAt !== null && Date.now() - runLoopStartedAt > RUN_LOOP_STALE_MS;
+
+  if (isRunLoopActive && !isStale) {
     console.log("⏳ runLoop already active, skipping duplicate trigger");
     return;
   }
 
   isRunLoopActive = true;
+  runLoopStartedAt = Date.now();
 
   try {
     console.log("🔄 runLoop triggered");
@@ -366,6 +556,9 @@ async function runLoop() {
       console.log("⛔ Runner not enabled");
       return;
     }
+
+    await ensureWatchdog();
+    await chrome.storage.local.set({ lastLoopAt: new Date().toISOString() });
 
     await recoverIfBrokenTaskState();
     await recoverIfTaskTimedOut();
@@ -389,6 +582,7 @@ async function runLoop() {
     }
   } finally {
     isRunLoopActive = false;
+    runLoopStartedAt = null;
   }
 }
 
@@ -458,7 +652,8 @@ async function handleSingleTask() {
     };
   }
 
-  const task = taskData.task;
+  // runId lets a late report from an earlier page be told apart from this one.
+  const task = { ...taskData.task, runId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
 
   isTaskInProgress = true;
   currentTaskStartedAt = Date.now();
@@ -482,7 +677,7 @@ async function handleSingleTask() {
 }
 
 async function fetchNextTask() {
-  const res = await fetch(`${CONFIG.BACKEND_URL}/tasks/next`, {
+  const res = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/tasks/next`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -508,22 +703,48 @@ async function fetchNextTask() {
   return data;
 }
 
+const SUBMIT_RETRY_DELAYS_MS = [3000, 10000];
+
+/*
+ * A result that does not reach Airtable is worse than a slow one: a placed
+ * bid or order would be done again once the record leaves BID_IN_PROGRESS.
+ * So a failed submit (Render restarting, Airtable 429) is retried before
+ * giving up. The backend only PATCHes the record, so a repeat is harmless.
+ */
 async function submitTaskResult(payload) {
-  const res = await fetch(`${CONFIG.BACKEND_URL}/tasks/${payload.recordId}/result`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
+  let lastError;
 
-  const data = await res.json();
+  for (let attempt = 0; attempt <= SUBMIT_RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) {
+      await new Promise((resolve) => setTimeout(resolve, SUBMIT_RETRY_DELAYS_MS[attempt - 1]));
+    }
 
-  if (!data.ok) {
-    throw new Error(data.error || "Failed to submit task result");
+    try {
+      const res = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/tasks/${payload.recordId}/result`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (!data.ok) {
+        throw new Error(data.error || "Failed to submit task result");
+      }
+
+      return data;
+    } catch (err) {
+      lastError = err;
+      console.warn(`Submit attempt ${attempt + 1} failed:`, err.message);
+
+      // The backend answered and refused this result; asking again won't change that.
+      if (/Unknown task result type/.test(err.message)) break;
+    }
   }
 
-  return data;
+  throw lastError;
 }
 
 function buildStockXUrl(task) {
@@ -570,13 +791,22 @@ function buildStockXUrl(task) {
   return `https://stockx.com/search?s=${sku}`;
 }
 
+// Runs on every worker start, including the first one after Chrome restarts.
 loadState().then(async () => {
   console.log("🔄 Worker booted");
 
   if (isRunnerEnabled) {
     console.log("🔄 Restoring runner loop after reload");
 
+    await ensureWatchdog();
     await scheduleNextRun(1000);
-    await runLoop();
+
+    try {
+      await runLoop();
+    } catch (err) {
+      console.error("Runner loop error after worker boot:", err);
+      await clearCurrentTaskState();
+      await scheduleNextRun(ERROR_RETRY_DELAY_MS);
+    }
   }
 });

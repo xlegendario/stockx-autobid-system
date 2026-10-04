@@ -16,7 +16,19 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
-window.addEventListener("load", async () => {
+/*
+ * Content scripts are injected at document_idle, which can be after the load
+ * event has already fired. A plain load listener then never runs, the task
+ * is never handled and the runner sits waiting. So run straight away when
+ * the page is already complete.
+ */
+if (document.readyState === "complete") {
+  onPageReady();
+} else {
+  window.addEventListener("load", onPageReady, { once: true });
+}
+
+async function onPageReady() {
   console.log("Page loaded:", window.location.href);
 
   const stored = await chrome.storage.local.get("currentTask");
@@ -137,7 +149,7 @@ window.addEventListener("load", async () => {
     if (await stopIfNeeded("page load")) return;
     handleTask();
   }, 2000);
-});
+}
 
 async function stopIfNeeded(context = "") {
   const mustStop = await shouldForceStopRunner();
@@ -719,6 +731,26 @@ function findMatchingOrderRowByOrderNumber(orderNumber) {
   })[0];
 }
 
+/*
+ * Clicking an order row is a client-side route change: there is no new page
+ * load, so the content script is not started again on the detail page. The
+ * old code looked once after 1.5s and, if the URL had not changed yet, did
+ * nothing more - leaving the task open until the runner was restarted.
+ */
+function waitForOrderDetailPage(onArrived, onGaveUp, attempt = 0) {
+  if (/^\/buying\/\d+/.test(window.location.pathname)) {
+    onArrived();
+    return;
+  }
+
+  if (attempt >= 20) {
+    onGaveUp();
+    return;
+  }
+
+  setTimeout(() => waitForOrderDetailPage(onArrived, onGaveUp, attempt + 1), 750);
+}
+
 function clickOrderRowForDetail(row) {
   if (!row) return false;
 
@@ -1162,18 +1194,21 @@ async function handleVerifyOrdersPage(attempt = 0) {
 
   clickOrderRowForDetail(matchingRow);
 
-  setTimeout(async () => {
-    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+  waitForOrderDetailPage(
+    async () => {
       console.log("✅ Verify navigated to order detail page");
 
       if (await stopIfNeeded("after order detail navigation")) return;
 
       handleVerifyOrderDetailPage();
-      return;
+    },
+    async () => {
+      await clearPendingVerifyOrderMeta();
+      reportTaskResult("VERIFY_FAILED", {
+        errorMessage: `Order ${orderNumber} found but its detail page did not open`
+      });
     }
-
-    console.log("🔍 Verify detail navigation not visible yet, waiting...");
-  }, 1500);
+  );
 }
 
 async function handleOrderSyncOrdersPage(attempt = 0) {
@@ -1233,18 +1268,20 @@ async function handleOrderSyncOrdersPage(attempt = 0) {
   console.log("📦 Matching order row found, opening detail page");
   clickOrderRowForDetail(matchingRow);
 
-  setTimeout(async () => {
-    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+  waitForOrderDetailPage(
+    async () => {
       console.log("✅ Order sync navigated to detail page");
 
       if (await stopIfNeeded("after order sync detail navigation")) return;
 
       handleOrderSyncDetailPage();
-      return;
+    },
+    () => {
+      reportTaskResult(getOrderSyncFailedAction(), {
+        errorMessage: `Order ${currentTask.orderNumber} found but its detail page did not open`
+      });
     }
-
-    console.log("📦 Order sync detail navigation not visible yet, waiting...");
-  }, 1500);
+  );
 }
 
 async function handleVerifyOrderDetailPage(attempt = 0) {
@@ -1363,6 +1400,32 @@ async function handleOrderSyncDetailPage(attempt = 0) {
   });
 }
 
+/*
+ * By the time these pages run the order has been placed and we hold its
+ * number; only the final price is still missing. The old fallbacks reported
+ * VERIFY_FAILED, which drops BID_IN_PROGRESS and puts the record straight
+ * back in the queue - where Buy Now is still under the max, so the next run
+ * bought the same pair again. Report the order itself, just without a price.
+ */
+async function reportInstantOrderWithoutPrice(meta, reason) {
+  await clearPendingInstantOrderMeta();
+
+  currentTask = {
+    ...(currentTask || {}),
+    recordId: meta.recordId,
+    type: meta.resultAction === "FIRST_ORDER_PLACED"
+      ? "PLACE_OR_BUY_WITH_SECOND_BID_CHECK"
+      : (currentTask?.type || "PLACE_OR_UPDATE"),
+    maxBid: null
+  };
+
+  reportTaskResult(meta.resultAction || "ORDER_PLACED_WITH_DETAILS", {
+    orderNumber: meta.orderNumber,
+    firstBuyNowPrice: meta.firstBuyNowPrice || null,
+    errorMessage: `Order placed; final price not read (${reason})`
+  });
+}
+
 async function handleInstantOrderOrdersPage(attempt = 0) {
   console.log("🔥 Handling instant order - orders page");
 
@@ -1376,10 +1439,7 @@ async function handleInstantOrderOrdersPage(attempt = 0) {
   }
 
   if (attempt > 12) {
-    await clearPendingInstantOrderMeta();
-    reportTaskResult("VERIFY_FAILED", {
-      errorMessage: "Could not find instant order in orders page"
-    });
+    await reportInstantOrderWithoutPrice(meta, "order not found on orders page");
     return;
   }
 
@@ -1414,20 +1474,16 @@ async function handleInstantOrderOrdersPage(attempt = 0) {
   console.log("🔥 Instant order row found, opening detail page");
   clickOrderRowForDetail(row);
 
-  setTimeout(async () => {
-    if (/^\/buying\/\d+/.test(window.location.pathname)) {
+  waitForOrderDetailPage(
+    async () => {
       console.log("✅ Instant order navigated to detail page");
 
       if (await stopIfNeeded("after instant order detail navigation")) return;
 
       handleInstantOrderDetailPage();
-      return;
-    }
-
-    console.log("🔥 Instant order detail navigation not visible yet, waiting...");
-  }, 1200);
-
-  return;
+    },
+    () => reportInstantOrderWithoutPrice(meta, "detail page did not open")
+  );
 }
 
 async function handleInstantOrderDetailPage(attempt = 0) {
@@ -1443,10 +1499,7 @@ async function handleInstantOrderDetailPage(attempt = 0) {
   }
 
   if (attempt > 12) {
-    await clearPendingInstantOrderMeta();
-    reportTaskResult("VERIFY_FAILED", {
-      errorMessage: "Could not extract price for instant order"
-    });
+    await reportInstantOrderWithoutPrice(meta, "price not readable on detail page");
     return;
   }
 
@@ -1475,6 +1528,7 @@ async function handleInstantOrderDetailPage(attempt = 0) {
   });
 
   currentTask = {
+    ...(currentTask || {}),
     recordId: meta.recordId,
     type: meta.resultAction === "FIRST_ORDER_PLACED"
       ? "PLACE_OR_BUY_WITH_SECOND_BID_CHECK"
@@ -2054,6 +2108,9 @@ function goToOfferPage() {
 
   if (!slug) {
     console.log("Could not determine product slug from URL");
+    reportTaskResult(getSearchFallbackFailureAction(), {
+      errorMessage: `Could not determine product slug from ${window.location.href}`
+    });
     return;
   }
 
@@ -3243,6 +3300,7 @@ function reportTaskResult(action, extra = {}) {
     type: currentTask.type,
     maxBid: submittedBid,
     intendedSecondBid: currentTask?.intendedSecondBid ?? null,
+    runId: currentTask?.runId ?? null,
     action,
     ...extra
   };
@@ -3339,6 +3397,9 @@ async function waitForFinalOutcome(finalButtonText = "", attempt = 0, retryCount
       return;
     }
 
+    reportTaskResult(getBidFailureAction(), {
+      errorMessage: `No success/failure screen detected after "${finalButtonText || "unknown button"}"`
+    });
     return;
   }
 
