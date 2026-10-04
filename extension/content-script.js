@@ -2354,24 +2354,48 @@ function reportCalculationFailure(errorMessage) {
   });
 }
 
+// Start bid keeps the full margin, the max bid the minimum one - the same 5
+// points apart as Ideal and Minimum Selling Price on Inventory Units.
+const LOJIQ_START_MARGIN_PERCENT = 0.10;
+const LOJIQ_MAX_MARGIN_PERCENT = 0.05;
+const LOJIQ_BASE_COSTS = 5;
+
 function calculateStockXBidFromBudget({
   buyingPrice,
   isMax,
   feePercent,
   vatRate,
   vatFlow,
+  vatType,
   lojiqMargin
 }) {
   let allowedSubtotal = Number(buyingPrice);
 
   if (!Number.isFinite(allowedSubtotal)) return null;
 
-  if (lojiqMargin) {
-    allowedSubtotal *= isMax ? 0.90 : 0.85;
+  /*
+   * On the VAT flow the StockX total is a net amount (reverse charge: bid +
+   * fee + shipping, nothing added at checkout), so the budget is brought back
+   * to net here. VAT Type comes from the linked Inventory Unit and is still
+   * empty while an order is outsourced, so the Airtable buying prices include
+   * VAT and this is the only division. Should VAT Type be VAT0/VAT21 already,
+   * the formula has divided once and doing it again would underbid.
+   */
+  const budgetIsNet = ["VAT0", "VAT21"].includes(String(vatType || "").toUpperCase());
+
+  if (String(vatFlow || "").toUpperCase() === "VAT" && !budgetIsNet) {
+    allowedSubtotal = allowedSubtotal / (1 + Number(vatRate || 0));
   }
 
-  if (String(vatFlow || "").toUpperCase() === "VAT") {
-    allowedSubtotal = allowedSubtotal / (1 + Number(vatRate || 0));
+  /*
+   * Lojiq margin, built the way Inventory Units price a pair: purchase price
+   * plus a percentage plus fixed base costs. Turned around, the most we may
+   * spend is (budget - base costs) / (1 + margin). Applied after the VAT step
+   * so the base costs come off the net amount, as they do on a unit.
+   */
+  if (lojiqMargin) {
+    const marginPercent = isMax ? LOJIQ_MAX_MARGIN_PERCENT : LOJIQ_START_MARGIN_PERCENT;
+    allowedSubtotal = (allowedSubtotal - LOJIQ_BASE_COSTS) / (1 + marginPercent);
   }
 
   const shipping = 10.95;
@@ -2724,6 +2748,7 @@ function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid, testBidSourc
     feePercent,
     vatRate: currentTask.clientVatRate,
     vatFlow: currentTask.merchantVatFlow,
+    vatType: currentTask.vatType,
     lojiqMargin: currentTask.lojiqMargin === true
   });
 
@@ -2733,6 +2758,7 @@ function waitForSubtotalAndReportStockXLimits(attempt = 0, testBid, testBidSourc
     feePercent,
     vatRate: currentTask.clientVatRate,
     vatFlow: currentTask.merchantVatFlow,
+    vatType: currentTask.vatType,
     lojiqMargin: currentTask.lojiqMargin === true
   });
 

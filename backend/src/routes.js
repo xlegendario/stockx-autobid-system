@@ -12,6 +12,13 @@ import { recordHeartbeat, getRunnerHealth } from "./runnerHealth.js";
 
 const router = express.Router();
 
+function parseMinOrderDate(raw) {
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 router.get("/orders", async (req, res) => {
   try {
     const records = await fetchOrders();
@@ -46,6 +53,8 @@ router.post("/tasks/next", async (req, res) => {
       ? String(accountGroupKeyRaw).trim().toLowerCase()
       : null;
     
+    const minOrderDate = parseMinOrderDate(req.body.minOrderDate);
+
     const records = await fetchOrders();
     const activeBidRecords = await fetchActiveBids();
     const orderSyncRecords = await fetchOrdersPlaced();
@@ -59,7 +68,8 @@ router.post("/tasks/next", async (req, res) => {
       accountGroupKey,
       orderSyncRecords,
       secondActiveBidRecords,
-      secondOrderSyncRecords
+      secondOrderSyncRecords,
+      minOrderDate
     );
 
     res.json({

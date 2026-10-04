@@ -743,7 +743,8 @@ async function fetchNextTask() {
     },
     body: JSON.stringify({
       runnerName: CONFIG.RUNNER_NAME,
-      accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY
+      accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
+      minOrderDate: CONFIG.MIN_ORDER_DATE || null
     })
   });
 

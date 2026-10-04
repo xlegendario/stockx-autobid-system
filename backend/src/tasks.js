@@ -320,6 +320,23 @@ export function debugRecords(records, runnerName) {
   });
 }
 
+/*
+ * Orders from before the runner's MIN_ORDER_DATE get no new work: no limit
+ * calculation, no first bid, no bid raise. StockX lead times make a pair for
+ * an old order pointless. Removing, verifying and syncing still happen, so
+ * bids already out there are cleaned up as before.
+ */
+function isBeforeMinOrderDate(record, minOrderDate) {
+  if (!minOrderDate) return false;
+
+  const raw = record.fields["Order Date"] || record.createdTime;
+  const orderDate = new Date(raw);
+
+  if (Number.isNaN(orderDate.getTime())) return false;
+
+  return orderDate < minOrderDate;
+}
+
 function getBlockingKey(fields) {
   const accountGroup = getAccountGroupKey(fields);
   const sku = getSku(fields);
@@ -335,7 +352,8 @@ export async function buildTask(
   requestedAccountGroupKey = null,
   orderSyncRecords = [],
   secondActiveBidRecords = [],
-  secondOrderSyncRecords = []
+  secondOrderSyncRecords = [],
+  minOrderDate = null
 ) {
   const normalizedRequestedRunner = normalizeRunner(runnerName);
   const activeBidKeys = new Set(
@@ -378,12 +396,14 @@ export async function buildTask(
       }
     }
 
-    const canCalculateLimits = needsBidCalculation(f);
+    const takesNewWork = !isBeforeMinOrderDate(r, minOrderDate);
 
-    const canPlaceOrUpdate = needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
+    const canCalculateLimits = takesNewWork && needsBidCalculation(f);
+
+    const canPlaceOrUpdate = takesNewWork && needsPlaceOrUpdate(f) && shouldPlaceOrUpdate(f);
 
     const canSecondFlow =
-      isInitialSecondBidFlowCandidate(f) ||
+      (takesNewWork && isInitialSecondBidFlowCandidate(f)) ||
       isSecondBidPlaceOrUpdateCandidate(f) ||
       isSecondBidRemoveCandidate(f);
     
@@ -446,6 +466,7 @@ export async function buildTask(
     }
 
     const firstCalculation = group.find((record) =>
+      !isBeforeMinOrderDate(record, minOrderDate) &&
       needsBidCalculation(record.fields)
     );
     if (firstCalculation) {
@@ -482,7 +503,8 @@ export async function buildTask(
       if (stockxOrderNumber) return false;
       if (secondBidFlowStatus) return false;
       if (lastAction === "FIRST_ORDER_PLACED") return false;
-    
+      if (isBeforeMinOrderDate(record, minOrderDate)) return false;
+
       return isInitialSecondBidFlowCandidate(f);
     });
     if (firstInitialSecondFlow) {
@@ -492,6 +514,7 @@ export async function buildTask(
 
     const firstNewPlace = group.find((record) => {
       const f = record.fields;
+      if (isBeforeMinOrderDate(record, minOrderDate)) return false;
       return needsBid(f) && !hasBidPlaced(f) && shouldPlaceOrUpdate(f);
     });
 
@@ -502,6 +525,7 @@ export async function buildTask(
 
     const firstUpdatePlace = group.find((record) => {
       const f = record.fields;
+      if (isBeforeMinOrderDate(record, minOrderDate)) return false;
       return needsBidUpdate(f) && shouldPlaceOrUpdate(f);
     });
 
@@ -697,6 +721,7 @@ export async function buildTask(
       maximumBuyingPrice: getMaximumBuyingPrice(fields),
       clientVatRate: getClientVatRate(fields),
       merchantVatFlow: getMerchantVatFlow(fields),
+      vatType: String(normalizeLookup(fields["VAT Type"]) || "").trim().toUpperCase(),
       lojiqMargin: getLojiqMargin(fields),
       lojiqMarginRaw:
         fields["Lojiq StockX Margin?"] ??
