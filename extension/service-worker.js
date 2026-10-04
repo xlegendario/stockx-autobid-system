@@ -101,6 +101,57 @@ function getTimeoutFailureAction(type) {
   }
 }
 
+
+/*
+ * Once a minute the runner tells the backend it is alive, which posts to
+ * Discord when the pings stop or the failure streak below gets long. Sent
+ * from the loop itself, so a ping only goes out while the loop really runs.
+ */
+const HEARTBEAT_INTERVAL_MS = 50000;
+let lastHeartbeatAt = 0;
+
+// Results that mean the page could not do its job. A logged-out account or a
+// captcha turns every task into one of these.
+function isFailureAction(action) {
+  return /FAILED$/.test(String(action || "")) || action === "NO_FUNDS";
+}
+
+async function updateFailureStreak(failed) {
+  const { consecutiveFailures = 0 } = await chrome.storage.local.get(["consecutiveFailures"]);
+  await chrome.storage.local.set({ consecutiveFailures: failed ? consecutiveFailures + 1 : 0 });
+}
+
+async function sendHeartbeat({ force = false, runnerEnabled = true } = {}) {
+  if (!force && Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
+  lastHeartbeatAt = Date.now();
+
+  const data = await chrome.storage.local.get([
+    "lastLoopAt",
+    "lastResultAt",
+    "lastResultAction",
+    "lastErrorAt",
+    "lastError",
+    "lastTimeoutTask",
+    "consecutiveFailures"
+  ]);
+
+  try {
+    await fetchWithTimeout(`${CONFIG.BACKEND_URL}/runner/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        runnerName: CONFIG.RUNNER_NAME,
+        accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
+        runnerEnabled,
+        ...data
+      })
+    });
+  } catch (err) {
+    // A missed ping is exactly what the backend watches for; nothing to do here.
+    console.warn("Heartbeat failed:", err.message);
+  }
+}
+
 async function describeRunnerTab() {
   const { runnerTabId } = await chrome.storage.local.get(["runnerTabId"]);
   if (!runnerTabId) return "no runner tab";
@@ -166,6 +217,8 @@ async function recoverIfTaskTimedOut() {
   if (currentTask?.recordId) {
     await reportTimedOutTask(currentTask);
   }
+
+  await updateFailureStreak(true);
 
   const { timeoutRecoveries = 0 } = await chrome.storage.local.get(["timeoutRecoveries"]);
   await chrome.storage.local.set({
@@ -395,6 +448,7 @@ async function handleTaskCompleted(payload) {
       lastResultAt: new Date().toISOString(),
       lastResultAction: payload?.action || null
     });
+    await updateFailureStreak(isFailureAction(payload?.action));
 
     if (isRunnerEnabled) {
       const action = payload?.action;
@@ -456,7 +510,8 @@ async function startRunner() {
   await chrome.storage.local.set({
     currentTask: null,
     currentTaskStartedAt: null,
-    forceStop: false
+    forceStop: false,
+    consecutiveFailures: 0
   });
 
   resetInProgressState();
@@ -489,6 +544,7 @@ async function stopRunner() {
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
   await chrome.alarms.clear(WATCHDOG_ALARM_NAME);
   await chrome.storage.local.set({ runnerTabId: null });
+  await sendHeartbeat({ force: true, runnerEnabled: false });
 
   return {
     ok: true,
@@ -512,6 +568,8 @@ async function forceStopRunner() {
     currentTask: null,
     runnerTabId: null
   });
+
+  await sendHeartbeat({ force: true, runnerEnabled: false });
 
   const tabs = await chrome.tabs.query({ url: ["*://stockx.com/*"] });
 
@@ -559,6 +617,7 @@ async function runLoop() {
 
     await ensureWatchdog();
     await chrome.storage.local.set({ lastLoopAt: new Date().toISOString() });
+    await sendHeartbeat();
 
     await recoverIfBrokenTaskState();
     await recoverIfTaskTimedOut();
