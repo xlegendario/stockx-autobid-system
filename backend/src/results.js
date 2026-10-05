@@ -17,6 +17,36 @@ export async function submitTaskResult(recordId, payload) {
 
   const now = new Date().toISOString();
 
+  /*
+   * The runner gave up on a task without the page reporting anything. That
+   * says nothing about the pair, so no failure state is written: a
+   * *_FAILED LastAction drops the record out of every Airtable formula that
+   * picks up bidding, raising and verifying, and one slow night left 64
+   * orders stranded that way. Only the message and a sync time are written,
+   * and BID_IN_PROGRESS is turned back into what it was, so the record comes
+   * round again. A second bid left SECOND_BID_IN_PROGRESS is retried after
+   * ten minutes already.
+   */
+  if (payload.action === "TASK_TIMEOUT") {
+    const fields = {
+      ErrorMessage: payload.errorMessage || "Runner timeout"
+    };
+
+    if (payload.type === "SYNC_ORDER_STATUS") {
+      fields.LastOrderSyncAt = now;
+    } else if (payload.type === "SYNC_SECOND_ORDER_STATUS") {
+      fields.LastSecondOrderSyncAt = now;
+    } else {
+      fields.LastSyncAt = now;
+    }
+
+    if (typeof payload.restoreLastAction === "string") {
+      fields.LastAction = payload.restoreLastAction;
+    }
+
+    return await updateOrder(recordId, fields);
+  }
+
   if (payload.action === "STOCKX_LIMITS_CALCULATED") {
     const startBid = moneyOrNull(payload.startBid);
     const maxBid = moneyOrNull(payload.maxBid);

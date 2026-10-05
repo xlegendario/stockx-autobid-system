@@ -741,13 +741,18 @@ export async function buildTask(
     initialSecondBidFlowCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
   
   if (chosenInitialSecondFlow) {
+    const previousLastAction = String(chosenInitialSecondFlow.fields["LastAction"] || "");
+
     await updateOrder(chosenInitialSecondFlow.id, {
       LastAction: "BID_IN_PROGRESS",
       LastSyncAt: new Date().toISOString(),
       ErrorMessage: ""
     });
-  
-    return await buildInitialSecondBidFlowTask(chosenInitialSecondFlow);
+
+    return {
+      ...(await buildInitialSecondBidFlowTask(chosenInitialSecondFlow)),
+      previousLastAction
+    };
   }
   
   const chosenNewPlace =
@@ -785,6 +790,10 @@ export async function buildTask(
       }
     }
 
+    // Handed back on a runner timeout, so the record returns to the state
+    // the Airtable formulas pick up instead of staying BID_IN_PROGRESS.
+    const previousLastAction = String(fields["LastAction"] || "");
+
     await updateOrder(chosenPlace.id, {
       LastAction: "BID_IN_PROGRESS",
       LastSyncAt: new Date().toISOString(),
@@ -798,7 +807,8 @@ export async function buildTask(
       size,
       maxBid,
       currentBid: getCurrentBid(fields),
-      stockxUrl
+      stockxUrl,
+      previousLastAction
     };
   }
 

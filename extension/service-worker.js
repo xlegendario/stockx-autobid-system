@@ -11,8 +11,10 @@ const BID_RESULT_NEXT_TASK_DELAY_MS = 4000;
 // A place flow can legitimately take ~2 minutes (retries on input, review,
 // confirm and the outcome screen), so the timeout leaves room for that.
 const TASK_TIMEOUT_MS = 180000; // 3 minuten
-const FETCH_TIMEOUT_MS = 30000;
-const RUN_LOOP_STALE_MS = 90000;
+// /tasks/next reads five full Airtable views and takes 12-17s on a normal
+// day, so 30s was too close.
+const FETCH_TIMEOUT_MS = 60000;
+const RUN_LOOP_STALE_MS = 150000;
 const RUNNER_ALARM_NAME = "stockx-runner-loop";
 
 /*
@@ -71,36 +73,6 @@ async function fetchWithTimeout(url, options = {}) {
     clearTimeout(timeout);
   }
 }
-
-/*
- * The failure action a page would have reported for this task type.
- *
- * Reporting it on timeout matters for more than bookkeeping: verify and sync
- * tasks are picked by oldest LastSyncAt, so a task that times out without
- * writing anything is handed out again straight away and blocks the queue.
- */
-function getTimeoutFailureAction(type) {
-  switch (type) {
-    case "CALCULATE_STOCKX_LIMITS":
-      return "STOCKX_LIMITS_CALCULATION_FAILED";
-    case "PLACE_SECOND_BID":
-      return "SECOND_BID_FAILED";
-    case "REMOVE":
-      return "BID_REMOVE_FAILED";
-    case "REMOVE_SECOND_BID":
-      return "SECOND_BID_REMOVE_FAILED";
-    case "VERIFY_BID_STATUS":
-    case "VERIFY_SECOND_BID_STATUS":
-      return "VERIFY_FAILED";
-    case "SYNC_ORDER_STATUS":
-      return "ORDER_STATUS_SYNC_FAILED";
-    case "SYNC_SECOND_ORDER_STATUS":
-      return "SECOND_ORDER_STATUS_SYNC_FAILED";
-    default:
-      return "BID_UPDATE_FAILED";
-  }
-}
-
 
 /*
  * Once a minute the runner tells the backend it is alive, which posts to
@@ -189,7 +161,9 @@ async function reportTimedOutTask(task) {
     payload = {
       recordId: task.recordId,
       type: task.type,
-      action: getTimeoutFailureAction(task.type),
+      action: "TASK_TIMEOUT",
+      restoreLastAction:
+        typeof task.previousLastAction === "string" ? task.previousLastAction : undefined,
       errorMessage: `Runner timeout: page did not report a result within ${TASK_TIMEOUT_MS / 1000}s; last page: ${where}`
     };
   }
