@@ -88,9 +88,29 @@ function isFailureAction(action) {
   return /FAILED$/.test(String(action || "")) || action === "NO_FUNDS";
 }
 
-async function updateFailureStreak(failed) {
-  const { consecutiveFailures = 0 } = await chrome.storage.local.get(["consecutiveFailures"]);
-  await chrome.storage.local.set({ consecutiveFailures: failed ? consecutiveFailures + 1 : 0 });
+/*
+ * Both streaks go to the backend. The failure streak raises the alert; the
+ * success streak clears it only once the runner has done a few tasks in a
+ * row, so one lucky task between failures no longer sends a recovery and a
+ * fresh alert a minute later.
+ */
+async function updateFailureStreak(failed, failure = null) {
+  const { consecutiveFailures = 0, consecutiveSuccesses = 0 } =
+    await chrome.storage.local.get(["consecutiveFailures", "consecutiveSuccesses"]);
+
+  const update = failed
+    ? { consecutiveFailures: consecutiveFailures + 1, consecutiveSuccesses: 0 }
+    : { consecutiveFailures: 0, consecutiveSuccesses: consecutiveSuccesses + 1 };
+
+  if (failed && failure) {
+    update.lastFailure = {
+      at: new Date().toISOString(),
+      action: failure.action || null,
+      errorMessage: String(failure.errorMessage || "").slice(0, 300)
+    };
+  }
+
+  await chrome.storage.local.set(update);
 }
 
 async function sendHeartbeat({ force = false, runnerEnabled = true } = {}) {
@@ -104,7 +124,9 @@ async function sendHeartbeat({ force = false, runnerEnabled = true } = {}) {
     "lastErrorAt",
     "lastError",
     "lastTimeoutTask",
-    "consecutiveFailures"
+    "consecutiveFailures",
+    "consecutiveSuccesses",
+    "lastFailure"
   ]);
 
   try {
@@ -192,7 +214,10 @@ async function recoverIfTaskTimedOut() {
     await reportTimedOutTask(currentTask);
   }
 
-  await updateFailureStreak(true);
+  await updateFailureStreak(true, {
+    action: `TIMEOUT ${currentTask?.type || ""}`.trim(),
+    errorMessage: `No result within ${TASK_TIMEOUT_MS / 1000}s; last page: ${await describeRunnerTab()}`
+  });
 
   const { timeoutRecoveries = 0 } = await chrome.storage.local.get(["timeoutRecoveries"]);
   await chrome.storage.local.set({
@@ -422,7 +447,7 @@ async function handleTaskCompleted(payload) {
       lastResultAt: new Date().toISOString(),
       lastResultAction: payload?.action || null
     });
-    await updateFailureStreak(isFailureAction(payload?.action));
+    await updateFailureStreak(isFailureAction(payload?.action), payload);
 
     if (isRunnerEnabled) {
       const action = payload?.action;
