@@ -1,5 +1,8 @@
 import { updateOrder, findOrdersPlacedByStockxOrderNumber } from "./airtable.js";
 
+// LastAction values that mean our bid is out on StockX.
+const LIVE_BID_ACTIONS = new Set(["BID_CREATED", "BID_UPDATED", "BID_VERIFIED_STILL_LIVE"]);
+
 function moneyOrNull(value) {
   const num = Number(value);
   return Number.isFinite(num) ? Math.floor(num) : null;
@@ -101,8 +104,17 @@ export async function submitTaskResult(recordId, payload) {
   }
 
   if (payload.action === "BID_UPDATE_FAILED") {
+    /*
+     * Raising a bid that is already live and failing leaves that bid live.
+     * BID_UPDATE_FAILED would take the record out of the verify and raise
+     * formulas, so an accepted bid went unnoticed (ORD-027465). BID_UPDATED
+     * keeps it in: the next round verifies first, then tries the raise again.
+     * A first placement that fails has no bid out, so it stays a failure.
+     */
+    const hadLiveBid = LIVE_BID_ACTIONS.has(String(payload.previousLastAction || ""));
+
     return await updateOrder(recordId, {
-      LastAction: "BID_UPDATE_FAILED",
+      LastAction: hadLiveBid ? "BID_UPDATED" : "BID_UPDATE_FAILED",
       LastSyncAt: now,
       ErrorMessage: payload.errorMessage || "Bid update failed"
     });
@@ -420,6 +432,16 @@ export async function submitTaskResult(recordId, payload) {
   }
 
   if (payload.action === "VERIFY_FAILED") {
+    // A verify that could not read the page knows nothing new about the bid.
+    // Leaving LastAction alone keeps it in the verify rotation; the newer
+    // LastSyncAt moves it to the back of the queue.
+    if (payload.type === "VERIFY_BID_STATUS") {
+      return await updateOrder(recordId, {
+        LastSyncAt: now,
+        ErrorMessage: payload.errorMessage || "Verify flow failed"
+      });
+    }
+
     return await updateOrder(recordId, {
       LastAction: "VERIFY_FAILED",
       LastSyncAt: now,

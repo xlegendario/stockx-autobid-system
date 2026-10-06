@@ -1568,6 +1568,39 @@ function isReviewOfferButtonText(value) {
   );
 }
 
+/*
+ * What was on screen when a button step gave up. "Not found" alone could
+ * mean a different label, a button that stayed disabled, or a checkbox to
+ * tick first - and that differs between accounts. Written into the error
+ * message so it can be read from Airtable.
+ */
+function describeVisibleButtons(isTarget) {
+  const visible = Array.from(document.querySelectorAll("button")).filter((btn) => {
+    const rect = btn.getBoundingClientRect();
+    const style = window.getComputedStyle(btn);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+  });
+
+  const target = visible.find((btn) => isTarget(btn.innerText));
+  const targetState = target
+    ? `Target button "${target.innerText.trim()}" is there but ${target.disabled || target.getAttribute("aria-disabled") === "true" ? "disabled" : "enabled"}.`
+    : "Target button not on screen.";
+
+  const labels = visible
+    .map((btn) => {
+      const text = (btn.innerText || btn.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ");
+      const disabled = btn.disabled || btn.getAttribute("aria-disabled") === "true";
+      return text ? `${text.slice(0, 30)}${disabled ? " (disabled)" : ""}` : null;
+    })
+    .filter(Boolean)
+    .slice(0, 15);
+
+  const uncheckedBoxes = Array.from(document.querySelectorAll('input[type="checkbox"]'))
+    .filter((box) => !box.checked && box.getBoundingClientRect().width > 0).length;
+
+  return `${targetState} Buttons: ${labels.join(" | ") || "none"}. Unchecked checkboxes: ${uncheckedBoxes}. Page: ${window.location.pathname}`;
+}
+
 function isConfirmOfferButtonText(value) {
   const text = normalizeText(value);
 
@@ -3182,7 +3215,7 @@ function waitForReviewBidEnabled(attempt = 0) {
   if (attempt > 15) {
     console.log("Review button never became enabled");
     reportTaskResult(getBidFailureAction(), {
-      errorMessage: "Review button never became enabled"
+      errorMessage: `Review button never became enabled. ${describeVisibleButtons(isReviewOfferButtonText)}`
     });
     return;
   }
@@ -3236,7 +3269,7 @@ async function clickReviewBid(attempt = 0) {
   if (attempt > 15) {
     console.log("Review button not found after multiple attempts");
     reportTaskResult(getBidFailureAction(), {
-      errorMessage: "Review button not found after multiple attempts"
+      errorMessage: `Review button not found after multiple attempts. ${describeVisibleButtons(isReviewOfferButtonText)}`
     });
     return;
   }
@@ -3267,7 +3300,7 @@ async function clickConfirmBid(attempt = 0) {
   if (attempt > 20) {
     console.log("Confirm/Place button not found after multiple attempts");
     reportTaskResult(getBidFailureAction(), {
-      errorMessage: "Confirm/Place button not found after multiple attempts"
+      errorMessage: `Confirm/Place button not usable after multiple attempts. ${describeVisibleButtons(isConfirmOfferButtonText)}`
     });
     return;
   }
@@ -3327,6 +3360,7 @@ function reportTaskResult(action, extra = {}) {
     maxBid: submittedBid,
     intendedSecondBid: currentTask?.intendedSecondBid ?? null,
     runId: currentTask?.runId ?? null,
+    previousLastAction: currentTask?.previousLastAction ?? null,
     action,
     ...extra
   };
