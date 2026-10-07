@@ -459,9 +459,14 @@ function getSearchFallbackFailureAction() {
     return "STOCKX_LIMITS_CALCULATION_FAILED";
   }
 
-  // second bid remove → beschouwen als removed/not found
+  /*
+    The search could not even find the product, so the bid was never looked
+    at. Reporting a removal here claimed something nobody checked, and the
+    backend then wrote the bid off and stopped asking - with the bid still
+    live on StockX. A failure is a failure.
+  */
   if (currentTask?.type === "REMOVE_SECOND_BID") {
-    return "SECOND_BID_REMOVED";
+    return "SECOND_BID_REMOVE_FAILED";
   }
 
   // second bid place
@@ -469,7 +474,6 @@ function getSearchFallbackFailureAction() {
     return "SECOND_BID_FAILED";
   }
 
-  // normal remove → bid bestaat blijkbaar niet meer
   if (currentTask?.type === "REMOVE") {
     return "BID_REMOVE_NOT_FOUND";
   }
@@ -1800,15 +1804,21 @@ function selectSizeFromDropdownForRemove(targetSize, attempt = 0) {
 
   if (candidates.length === 0) {
     if (attempt > 15) {
+      /*
+        StockX lists every size of a product, whatever we have bid on. So a
+        size row that is not in this dropdown says the dropdown did not open,
+        the page did not load, or the size reads differently there - never
+        that the bid is gone. It used to be reported as removed anyway.
+      */
       if (currentTask?.type === "REMOVE_SECOND_BID") {
-        reportTaskResult("SECOND_BID_REMOVED", {
-          errorMessage: `Second bid size ${targetSize} not found after scrolling size dropdown; treating as already removed`
+        reportTaskResult("SECOND_BID_REMOVE_FAILED", {
+          errorMessage: `Second bid size ${targetSize} never appeared in the size dropdown, so the bid was not reached`
         });
         return;
       }
 
       reportTaskResult("BID_REMOVE_NOT_FOUND", {
-        errorMessage: `Remove size ${targetSize} not found after scrolling size dropdown`
+        errorMessage: `Size ${targetSize} never appeared in the size dropdown, so the bid was not reached and may still be live`
       });
       return;
     }
@@ -1839,15 +1849,20 @@ function clickUpdateButtonForRemove(attempt = 0) {
   console.log("🧹 REMOVE flow reached clickUpdateButtonForRemove");
 
   if (attempt > 25) {
+    /*
+      The size was picked and the Update control never came. That is this page
+      not finishing, not a bid that was already gone - the old message said
+      "already missing on StockX", which nothing here had established.
+    */
     if (currentTask?.type === "REMOVE_SECOND_BID") {
-      reportTaskResult("SECOND_BID_REMOVED", {
-        errorMessage: "Second bid was already missing on StockX during remove flow"
+      reportTaskResult("SECOND_BID_REMOVE_FAILED", {
+        errorMessage: "Update button never appeared after picking the size, so the second bid was not reached"
       });
       return;
     }
-  
+
     reportTaskResult(getRemoveNotFoundAction(), {
-      errorMessage: "Update button not found after selecting size"
+      errorMessage: "Update button never appeared after picking the size, so the bid was not reached and may still be live"
     });
     return;
   }

@@ -151,13 +151,31 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  /*
+   * Not found is not the same as gone.
+   *
+   * FIXED - this cleared BidPlaced, exactly like BID_REMOVED. But nothing in
+   * the extension ever checks whether the bid is still there: every
+   * BID_REMOVE_NOT_FOUND comes from a step of the page that did not work -
+   * the product not found by search, the size row not found in the dropdown,
+   * the Update button not found after picking the size. None of those say
+   * anything about the bid.
+   *
+   * And clearing BidPlaced ended it: "Needs StockX Removal" asks for
+   * BidPlaced, so the flag fell to 0 and the removal was never tried again.
+   * ORD-027571 went that way on 07-10-2026 - the store took the order back at
+   * 16:52, the removal failed on the size dropdown at 16:53, and the bid that
+   * stayed behind was hit. A pair bought for an order that no longer existed.
+   *
+   * So the bid stays on the record. The flag stays 1, the next loop tries
+   * again, and a removal that keeps failing stays visible instead of being
+   * quietly written off.
+   */
   if (payload.action === "BID_REMOVE_NOT_FOUND") {
     return await updateOrder(recordId, {
-      BidPlaced: false,
-      CurrentBid: null,
       LastAction: "BID_REMOVE_NOT_FOUND",
       LastSyncAt: now,
-      ErrorMessage: payload.errorMessage || ""
+      ErrorMessage: payload.errorMessage || "Remove flow could not reach the bid; it may still be live"
     });
   }
 
