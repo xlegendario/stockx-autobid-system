@@ -43,7 +43,8 @@ function formatTime(iso) {
 
 function runnerTitle(heartbeat) {
   const group = heartbeat.accountGroupKey ? ` (${heartbeat.accountGroupKey})` : "";
-  return `**${heartbeat.runnerName}**${group} · ${SERVICE_LABEL}`;
+  const version = heartbeat.extensionVersion ? ` · v${heartbeat.extensionVersion}` : " · version unknown";
+  return `**${heartbeat.runnerName}**${group} · ${SERVICE_LABEL}${version}`;
 }
 
 function detailLines(heartbeat) {
@@ -112,6 +113,9 @@ export function recordHeartbeat(body) {
     runnerName,
     accountGroupKey: String(body.accountGroupKey || "").trim() || null,
     runnerEnabled: body.runnerEnabled !== false,
+    // An extension that does not send it is one that was never reloaded since
+    // this was added, which is the thing worth seeing.
+    extensionVersion: String(body.extensionVersion || "").trim() || null,
     lastLoopAt: body.lastLoopAt || null,
     lastResultAt: body.lastResultAt || null,
     lastResultAction: body.lastResultAction || null,

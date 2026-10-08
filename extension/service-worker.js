@@ -137,6 +137,10 @@ async function sendHeartbeat({ force = false, runnerEnabled = true } = {}) {
         runnerName: CONFIG.RUNNER_NAME,
         accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
         runnerEnabled,
+        // Which code this runner is actually running. The extension is put on
+        // each machine by hand, so without this there is no way to tell a
+        // runner that took a fix from one that was missed.
+        extensionVersion: chrome.runtime.getManifest().version,
         ...data
       })
     });
