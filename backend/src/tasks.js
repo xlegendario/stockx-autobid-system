@@ -639,8 +639,28 @@ export async function buildTask(
     secondOrderSyncCandidates.push(record);
   }
 
-  const chosenRemove =
-    removeCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  /*
+   * Removals go by last attempt, not by order age. A removal that fails is
+   * tried again (a bid that may still be live must not be written off), and
+   * oldest-order-first handed that same failing removal out every round:
+   * on 08-10-2026 ORD-027057 held the SneakerAsk runner for six hours while
+   * 30 other bids on fulfilled orders stayed live. Its LastSyncAt moves on
+   * each attempt, so now it goes to the back and the rest get their turn.
+   */
+  const byLastAttempt = (a, b) => {
+    const aLast = getLastSyncTimestamp(a.fields);
+    const bLast = getLastSyncTimestamp(b.fields);
+
+    if (aLast !== bLast) {
+      if (aLast === null) return -1;
+      if (bLast === null) return 1;
+      return aLast - bLast;
+    }
+
+    return new Date(a.createdTime) - new Date(b.createdTime);
+  };
+
+  const chosenRemove = removeCandidates.sort(byLastAttempt)[0];
 
   if (chosenRemove) {
     const fields = chosenRemove.fields;
@@ -671,8 +691,7 @@ export async function buildTask(
     };
   }
 
-  const chosenSecondRemove =
-    secondBidRemoveCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  const chosenSecondRemove = secondBidRemoveCandidates.sort(byLastAttempt)[0];
 
   if (chosenSecondRemove) {
     return await buildSecondBidRemoveTask(chosenSecondRemove);
