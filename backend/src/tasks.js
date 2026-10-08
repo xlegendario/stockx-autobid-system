@@ -72,6 +72,24 @@ function isAutobidEnabled(fields) {
   return val === true || val === 1 || val === "1" || val === "true";
 }
 
+/*
+ * "StockX Instant Buy" on the merchant: on a first placement, buy outright
+ * when Buy Now is at or under Max StockX Bid instead of only under the start
+ * bid. Not once a bid of ours is live - buying then would leave that bid on
+ * StockX for a seller to accept, and the pair would be bought twice.
+ */
+function getInstantBuyCeiling(fields) {
+  if (!isTruthyLookup(fields["Merchant StockX Instant Buy"])) return null;
+  if (hasBidPlaced(fields)) return null;
+
+  return parseMoney(fields["Max StockX Bid"]);
+}
+
+function isTruthyLookup(value) {
+  const raw = normalizeLookup(value);
+  return raw === true || raw === 1 || raw === "1" || String(raw).trim().toLowerCase() === "true";
+}
+
 function hasBidPlaced(fields) {
   const raw = fields["BidPlaced"];
 
@@ -829,7 +847,8 @@ export async function buildTask(
       maxBid,
       currentBid: getCurrentBid(fields),
       stockxUrl,
-      previousLastAction
+      previousLastAction,
+      instantBuyCeiling: getInstantBuyCeiling(fields)
     };
   }
 

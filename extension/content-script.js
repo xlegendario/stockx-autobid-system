@@ -2780,7 +2780,13 @@ async function switchToBuyNowIfCheaperOrEqual(attempt = 0) {
     return false;
   }
 
-  const intendedOffer = Number(currentTask.maxBid);
+  // With StockX Instant Buy on the merchant the backend sends Max StockX Bid
+  // for a first placement, so anything up to the max is bought outright.
+  const offer = Number(currentTask.maxBid);
+  const instantBuyCeiling = Number(currentTask.instantBuyCeiling);
+  const intendedOffer = Number.isFinite(instantBuyCeiling)
+    ? Math.max(offer, instantBuyCeiling)
+    : offer;
 
   if (!Number.isFinite(intendedOffer)) {
     console.log("Buy Now safety check skipped: invalid intended offer");
