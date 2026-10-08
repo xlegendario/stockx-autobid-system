@@ -815,6 +815,18 @@ function buildStockXUrl(task) {
     return "https://stockx.com/buying/bids";
   }
 
+  // REMOVE flows → Offers & Bids, filtered on the SKU (see handleRemoveBidsPage)
+  if (task.type === "REMOVE" || task.type === "REMOVE_SECOND_BID") {
+    const sku = String(Array.isArray(task.sku) ? task.sku[0] : task.sku || "")
+      .split("/")[0]
+      .trim()
+      .toUpperCase();
+
+    if (sku) {
+      return `https://stockx.com/buying/bids?q=${encodeURIComponent(sku)}`;
+    }
+  }
+
   // ORDER SYNC flows → direct naar orders page
   if (
     task.type === "SYNC_ORDER_STATUS" ||

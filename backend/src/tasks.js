@@ -687,6 +687,8 @@ export async function buildTask(
       recordId: chosenRemove.id,
       sku,
       size,
+      // Only used to tell two bids on one size apart on Offers & Bids.
+      currentBid: getCurrentBid(fields),
       stockxUrl
     };
   }

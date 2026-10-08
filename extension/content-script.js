@@ -36,6 +36,18 @@ async function onPageReady() {
 
   if (
     currentTask &&
+    isRemoveTaskType(currentTask.type) &&
+    window.location.pathname.includes("/buying/bids")
+  ) {
+    setTimeout(async () => {
+      if (await stopIfNeeded("remove bids page")) return;
+      handleRemoveBidsPage();
+    }, 1500);
+    return;
+  }
+
+  if (
+    currentTask &&
     needsProductPageTask(currentTask.type) &&
     window.location.pathname.includes("/search")
   ) {
@@ -357,7 +369,12 @@ async function handleRemoveFlow() {
 
   if (await stopIfNeeded("start remove flow")) return;
 
-  openSizeDropdownAndSelectForRemove(currentTask.size);
+  if (window.location.pathname.includes("/buying/bids")) {
+    handleRemoveBidsPage();
+    return;
+  }
+
+  window.location.href = getBidsSearchUrl(getRemoveSearchSku());
 }
 
 async function handleVerifyFlow() {
@@ -536,12 +553,6 @@ function getRemoveFailedAction() {
   return currentTask?.type === "REMOVE_SECOND_BID"
     ? "SECOND_BID_REMOVE_FAILED"
     : "BID_REMOVE_FAILED";
-}
-
-function getRemoveNotFoundAction() {
-  return currentTask?.type === "REMOVE_SECOND_BID"
-    ? "SECOND_BID_REMOVE_FAILED"
-    : "BID_REMOVE_NOT_FOUND";
 }
 
 function getInstantOrderAction() {
@@ -1758,396 +1769,221 @@ function selectSizeFromDropdown(targetSize) {
   }, 1200);
 }
 
-function openSizeDropdownAndSelectForRemove(targetSize) {
-  console.log("🧹 Trying to open size dropdown for REMOVE:", targetSize);
+/*
+ * Removing a bid from Offers & Bids.
+ *
+ * The old flow went through the product page: open the size dropdown, pick
+ * the size, wait for an Update control, delete on the edit page. Any step that
+ * did not render ended in "not found", and that could not be told apart from a
+ * bid that was already gone - two of three stuck removals on 08-10-2026 were
+ * bids that no longer existed. Offers & Bids lists our bids directly: search
+ * the SKU, find the row with the size, delete it there. And a list that loaded
+ * without that row says the bid is gone, which the verify flow already relies
+ * on.
+ */
+const REMOVE_RECHECK_KEY = "pendingRemoveRecheck";
 
-  const buttons = Array.from(document.querySelectorAll("button"));
-
-  const dropdownButton = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-    return text.includes("eu ") || text === "size:" || text.includes("size");
-  });
-
-  if (!dropdownButton) {
-    console.log("REMOVE: size dropdown not found yet, retrying...");
-    setTimeout(() => openSizeDropdownAndSelectForRemove(targetSize), 1000);
-    return;
-  }
-
-  console.log("REMOVE: clicking size dropdown:", dropdownButton.innerText);
-  dropdownButton.click();
-
-  setTimeout(() => {
-    selectSizeFromDropdownForRemove(targetSize);
-  }, 1000);
+function getRemoveSearchSku() {
+  // Combined style IDs ("A / B") are listed under the first one.
+  return getSkuTextFromTask().split("/")[0].trim();
 }
 
-function selectSizeFromDropdownForRemove(targetSize, attempt = 0) {
-  const normalizedTarget = normalizeText(targetSize);
-  console.log("🧹 Trying to select size from dropdown for REMOVE:", normalizedTarget);
+function getBidsSearchUrl(sku) {
+  return `https://stockx.com/buying/bids?q=${encodeURIComponent(sku)}`;
+}
+
+function isVisibleElement(el) {
+  const rect = el.getBoundingClientRect();
+  const style = window.getComputedStyle(el);
+  return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+}
+
+function findBidRows() {
+  const hasEditButton = (el) =>
+    Array.from(el.querySelectorAll("button, a, [role='button']")).some(
+      (btn) => normalizeText(btn.innerText) === "edit"
+    );
 
   const candidates = Array.from(
-    document.querySelectorAll("button, [role='option'], li, div, span")
-  ).filter((el) => {
-    const text = normalizeText(el.innerText);
-    const rect = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
+    document.querySelectorAll("tr, [role='row'], li, div")
+  ).filter((el) => isVisibleElement(el) && /\beu\s/i.test(el.innerText || "") && hasEditButton(el));
 
-    if (!text) return false;
-    if (style.visibility === "hidden" || style.display === "none") return false;
-    if (rect.width <= 0 || rect.height <= 0) return false;
-
-    if (text.includes("size:")) return false;
-
-    return text === normalizedTarget || text === `eu ${normalizedTarget}`;
-  });
-
-  if (candidates.length === 0) {
-    if (attempt > 15) {
-      /*
-        StockX lists every size of a product, whatever we have bid on. So a
-        size row that is not in this dropdown says the dropdown did not open,
-        the page did not load, or the size reads differently there - never
-        that the bid is gone. It used to be reported as removed anyway.
-      */
-      if (currentTask?.type === "REMOVE_SECOND_BID") {
-        reportTaskResult("SECOND_BID_REMOVE_FAILED", {
-          errorMessage: `Second bid size ${targetSize} never appeared in the size dropdown, so the bid was not reached`
-        });
-        return;
-      }
-
-      reportTaskResult("BID_REMOVE_NOT_FOUND", {
-        errorMessage: `Size ${targetSize} never appeared in the size dropdown, so the bid was not reached and may still be live`
-      });
-      return;
-    }
-
-    console.log("REMOVE: size option not found yet, scrolling dropdown and retrying...");
-    scrollSizeDropdownDown();
-
-    setTimeout(() => {
-      selectSizeFromDropdownForRemove(targetSize, attempt + 1);
-    }, 1000);
-
-    return;
-  }
-
-  const match = candidates.sort(
-    (a, b) => normalizeText(a.innerText).length - normalizeText(b.innerText).length
-  )[0];
-
-  console.log("🧹 Clicking size option for REMOVE:", match.innerText);
-  clickElement(match);
-
-  setTimeout(() => {
-    clickUpdateButtonForRemove();
-  }, 2500);
+  // The row is the smallest element holding both the size and an Edit button.
+  return candidates.filter((el) => !candidates.some((other) => other !== el && el.contains(other)));
 }
 
-function clickUpdateButtonForRemove(attempt = 0) {
-  console.log("🧹 REMOVE flow reached clickUpdateButtonForRemove");
+function rowHasAmount(row, amount) {
+  const wanted = Number(amount);
+  if (!Number.isFinite(wanted)) return false;
 
-  if (attempt > 25) {
-    /*
-      The size was picked and the Update control never came. That is this page
-      not finishing, not a bid that was already gone - the old message said
-      "already missing on StockX", which nothing here had established.
-    */
-    if (currentTask?.type === "REMOVE_SECOND_BID") {
-      reportTaskResult("SECOND_BID_REMOVE_FAILED", {
-        errorMessage: "Update button never appeared after picking the size, so the second bid was not reached"
-      });
-      return;
-    }
-
-    reportTaskResult(getRemoveNotFoundAction(), {
-      errorMessage: "Update button never appeared after picking the size, so the bid was not reached and may still be live"
-    });
-    return;
-  }
-
-  const candidates = Array.from(
-    document.querySelectorAll("button, a, [role='button'], div, span")
-  ).filter((el) => {
-    const text = normalizeText(el.innerText);
-    const rect = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
-
-    if (!text) return false;
-    if (style.visibility === "hidden" || style.display === "none") return false;
-    if (rect.width <= 0 || rect.height <= 0) return false;
-
-    return text === "update";
-  });
-
-  if (candidates.length === 0) {
-    console.log("REMOVE: Update button not found yet, retrying...");
-    setTimeout(() => clickUpdateButtonForRemove(attempt + 1), 1000);
-    return;
-  }
-
-  const updateEl = candidates.sort(
-    (a, b) =>
-      a.getBoundingClientRect().width * a.getBoundingClientRect().height -
-      b.getBoundingClientRect().width * b.getBoundingClientRect().height
-  )[0];
-
-  (async () => {
-    if (await stopIfNeeded("before update click")) return;
-
-    console.log("🧹 Clicking real Update control:", updateEl.innerText);
-    clickElement(updateEl);
-
-    setTimeout(() => {
-      waitForRemoveEditPage();
-    }, 2500);
-  })();
+  const amounts = (String(row.innerText || "").match(/€\s*[\d.,]+/g) || []).map(parseMoneyValue);
+  return amounts.some((value) => Number.isFinite(value) && Math.floor(value) === Math.floor(wanted));
 }
 
-function waitForRemoveEditPage(attempt = 0) {
-  console.log("🧹 Waiting for remove edit page...");
+function findMatchingBidRows() {
+  return findBidRows().filter((row) => textHasExactEuSize(row.innerText, currentTask.size));
+}
 
-  if (attempt > 15) {
-    reportTaskResult(getRemoveFailedAction(), {
-      errorMessage: "Update clicked but edit page did not load"
-    });
-    return;
-  }
+function findTrashButton(row) {
+  const buttons = Array.from(row.querySelectorAll("button, [role='button'], a")).filter(isVisibleElement);
 
-  const buttons = Array.from(document.querySelectorAll("button"));
+  const labelled = buttons.find((btn) => {
+    const label = normalizeText(
+      `${btn.getAttribute("aria-label") || ""} ${btn.getAttribute("title") || ""} ${btn.getAttribute("data-testid") || ""}`
+    );
+    return /delete|remove|trash|cancel/.test(label);
+  });
+
+  if (labelled) return labelled;
+
+  // Otherwise the icon-only button after Edit.
+  const editIndex = buttons.findIndex((btn) => normalizeText(btn.innerText) === "edit");
+  return buttons.slice(editIndex + 1).find((btn) => !normalizeText(btn.innerText)) || null;
+}
+
+function isBidsListLoaded() {
   const pageText = getPageText();
 
-  const deleteBtn = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-  
-    return (
-      text === "delete bid" ||
-      text.includes("delete bid") ||
-      text === "delete offer" ||
-      text.includes("delete offer")
-    );
-  });
-
-  if (deleteBtn) {
-    console.log("🧹 Remove edit page detected via Delete Bid button");
-    clickDeleteBidButtonForRemove();
-    return;
-  }
-
-  const looksLikeEditPage =
-    pageText.includes("delete bid") ||
-    pageText.includes("delete offer") ||
-    pageText.includes("review bid") ||
-    pageText.includes("editing your offer") ||
-    pageText.includes("update offer") ||
-    (pageText.includes("bid") && pageText.includes("sell faster"));
-
-  if (looksLikeEditPage) {
-    console.log("🧹 Edit-like page detected, retrying for Delete Bid button...");
-  } else {
-    console.log("🧹 Edit page not ready yet, retrying...");
-  }
-
-  setTimeout(() => {
-    waitForRemoveEditPage(attempt + 1);
-  }, 1000);
+  return (
+    findBidRows().length > 0 ||
+    pageText.includes("you don't have active bids") ||
+    pageText.includes("items that you are bidding on will show up here")
+  );
 }
 
-function clickDeleteBidButtonForRemove(attempt = 0) {
-  console.log("🧹 Trying to click Delete Bid...");
+async function handleRemoveBidsPage(attempt = 0, previousCount = null) {
+  if (!currentTask) return;
+  if (await stopIfNeeded("remove on bids page")) return;
 
-  if (attempt > 15) {
-    reportTaskResult(getRemoveFailedAction(), {
-      errorMessage: "Delete Bid button not found on edit page"
-    });
+  const sku = getRemoveSearchSku();
+  const query = new URL(window.location.href).searchParams.get("q") || "";
+
+  if (normalizeText(query) !== normalizeText(sku)) {
+    window.location.href = getBidsSearchUrl(sku);
     return;
   }
-
-  const buttons = Array.from(document.querySelectorAll("button"));
-
-  const deleteBtn = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-  
-    return (
-      text === "delete bid" ||
-      text.includes("delete bid") ||
-      text === "delete offer" ||
-      text.includes("delete offer")
-    );
-  });
-
-  if (!deleteBtn) {
-    console.log("🧹 Delete Bid button not found yet, retrying...");
-    setTimeout(() => {
-      clickDeleteBidButtonForRemove(attempt + 1);
-    }, 1000);
-    return;
-  }
-
-  const isDisabled =
-    deleteBtn.disabled ||
-    deleteBtn.getAttribute("aria-disabled") === "true";
-
-  if (isDisabled) {
-    console.log("🧹 Delete Bid button is disabled, waiting...");
-    setTimeout(() => {
-      clickDeleteBidButtonForRemove(attempt + 1);
-    }, 1000);
-    return;
-  }
-
-  (async () => {
-    if (await stopIfNeeded("before delete bid click")) return;
-
-    console.log("🧹 Clicking Delete Bid:", deleteBtn.innerText);
-    clickElement(deleteBtn);
-
-    setTimeout(() => {
-      waitForReturnToProductPageAfterRemove();
-    }, 2000);
-  })();
-}
-
-function waitForReturnToProductPageAfterRemove(attempt = 0) {
-  console.log("🧹 Waiting to return to product page after Delete Bid...");
 
   if (attempt > 20) {
     reportTaskResult(getRemoveFailedAction(), {
-      errorMessage: "Delete Bid clicked but did not return to product page"
+      errorMessage: `Offers & Bids did not finish loading for ${sku}. ${describeVisibleButtons((text) => normalizeText(text) === "edit")}`
     });
     return;
   }
 
-  const isBuyPage = window.location.pathname.includes("/buy/");
-  const pageText = getPageText();
-
-  const looksLikeProductPage =
-    !isBuyPage &&
-    (
-      pageText.includes("buy or bid") ||
-      pageText.includes("make offer") ||
-      pageText.includes("sell or ask") ||
-      pageText.includes("your current bid") ||
-      pageText.includes("your current offer") ||
-      pageText.includes("size")
-    );
-
-  if (looksLikeProductPage) {
-    console.log("🧹 Returned to product page after Delete Bid");
-    verifyRemovedBidForTargetSize();
+  if (!isBidsListLoaded()) {
+    setTimeout(() => handleRemoveBidsPage(attempt + 1, null), 1000);
     return;
   }
 
-  console.log("🧹 Not back on product page yet, retrying...");
-  setTimeout(() => {
-    waitForReturnToProductPageAfterRemove(attempt + 1);
-  }, 1000);
-}
+  const matching = findMatchingBidRows();
 
-async function verifyRemovedBidForTargetSize() {
-  if (!currentTask) {
+  // Results can still be filling in; act on a count seen twice in a row.
+  if (previousCount === null || previousCount !== matching.length) {
+    setTimeout(() => handleRemoveBidsPage(attempt + 1, matching.length), 1500);
+    return;
+  }
+
+  const recheck = (await chrome.storage.local.get([REMOVE_RECHECK_KEY]))[REMOVE_RECHECK_KEY];
+  const isRecheck = recheck?.recordId === currentTask.recordId;
+
+  if (isRecheck) {
+    await chrome.storage.local.remove([REMOVE_RECHECK_KEY]);
+  }
+
+  if (matching.length === 0) {
+    reportTaskResult(getRemoveSuccessAction(), {
+      errorMessage: isRecheck
+        ? ""
+        : `No bid for EU ${currentTask.size} on Offers & Bids for ${sku}; already gone`
+    });
+    return;
+  }
+
+  if (isRecheck) {
     reportTaskResult(getRemoveFailedAction(), {
-      errorMessage: "No currentTask available during post-delete verification"
+      errorMessage: `Delete was clicked but the EU ${currentTask.size} bid for ${sku} is still listed`
     });
     return;
   }
 
-  if (await stopIfNeeded("before remove verification")) return;
+  // Two of our bids on one size cannot be told apart by size alone; the
+  // amount on the record decides, and if it does not, nobody guesses.
+  let row = matching[0];
 
-  console.log("🧹 Verifying removed bid for target size:", currentTask.size);
-  openSizeDropdownAndSelectForRemoveVerification(currentTask.size);
-}
+  if (matching.length > 1) {
+    const byAmount = matching.filter((candidate) => rowHasAmount(candidate, currentTask.currentBid));
 
-function openSizeDropdownAndSelectForRemoveVerification(targetSize) {
-  console.log("🧹 Opening size dropdown for REMOVE verification:", targetSize);
+    if (byAmount.length !== 1) {
+      reportTaskResult(getRemoveFailedAction(), {
+        errorMessage: `${matching.length} bids for EU ${currentTask.size} on ${sku}; not removing one automatically`
+      });
+      return;
+    }
 
-  const buttons = Array.from(document.querySelectorAll("button"));
-
-  const dropdownButton = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-    return text.includes("eu ") || text === "size:" || text.includes("size");
-  });
-
-  if (!dropdownButton) {
-    console.log("REMOVE VERIFY: size dropdown not found yet, retrying...");
-    setTimeout(() => openSizeDropdownAndSelectForRemoveVerification(targetSize), 1000);
-    return;
+    row = byAmount[0];
   }
 
-  console.log("REMOVE VERIFY: clicking size dropdown:", dropdownButton.innerText);
-  dropdownButton.click();
+  const trash = findTrashButton(row);
 
-  setTimeout(() => {
-    selectSizeFromDropdownForRemoveVerification(targetSize);
-  }, 1000);
-}
-
-function selectSizeFromDropdownForRemoveVerification(targetSize) {
-  const normalizedTarget = normalizeText(targetSize);
-  console.log("🧹 Selecting size for REMOVE verification:", normalizedTarget);
-
-  const allButtons = Array.from(document.querySelectorAll("button"));
-  const allDivs = Array.from(document.querySelectorAll("div"));
-  const allSpans = Array.from(document.querySelectorAll("span"));
-
-  const candidates = [...allButtons, ...allDivs, ...allSpans];
-
-  const match = candidates.find((el) => {
-    const text = normalizeText(el.innerText);
-    return (
-      text === normalizedTarget ||
-      text === `eu ${normalizedTarget}` ||
-      text.includes(`eu ${normalizedTarget}`)
-    );
-  });
-
-  if (!match) {
-    console.log("REMOVE VERIFY: size option not found yet, scrolling dropdown and retrying...");
-    scrollSizeDropdownDown();
-    setTimeout(() => selectSizeFromDropdownForRemoveVerification(targetSize), 700);
-    return;
-  }
-  console.log("🧹 Clicking size option for REMOVE verification:", match.innerText);
-  match.click();
-
-  setTimeout(() => {
-    checkIfBidRemovedForSelectedSize();
-  }, 1500);
-}
-
-function checkIfBidRemovedForSelectedSize(attempt = 0) {
-  console.log("🧹 Checking if bid is removed for selected size...");
-
-  if (attempt > 12) {
+  if (!trash) {
     reportTaskResult(getRemoveFailedAction(), {
-      errorMessage: "Could not verify bid removal after re-selecting target size"
+      errorMessage: `Bid row for EU ${currentTask.size} found but no delete control. ${describeVisibleButtons(() => false)}`
     });
     return;
   }
 
-  const buttons = Array.from(document.querySelectorAll("button"));
-  const pageText = getPageText();
+  console.log("🧹 Deleting bid from Offers & Bids:", { sku, size: currentTask.size });
+  clickElement(trash);
 
-  const updateBtn = buttons.find((btn) => {
-    const text = normalizeText(btn.innerText);
-    return text === "update" || text.includes("update");
-  });
+  setTimeout(() => confirmBidDeletion(0, matching.length), 1200);
+}
 
-  const hasCurrentBidText =
-    pageText.includes("your current bid") ||
-    pageText.includes("your current offer");
+function isDeleteConfirmText(value) {
+  const text = normalizeText(value);
+  return /^(delete|remove|yes|confirm)\b/.test(text) || text.includes("delete offer") || text.includes("delete bid");
+}
 
-  if (!updateBtn && !hasCurrentBidText) {
-    console.log("✅ Bid removed successfully for target size");
-    reportTaskResult(getRemoveSuccessAction());
+function confirmBidDeletion(attempt, countBefore) {
+  const dialogs = Array.from(document.querySelectorAll("[role='dialog'], [role='alertdialog'], [aria-modal='true']"));
+  const scope = dialogs.length > 0 ? dialogs : [document];
+
+  const confirmButton = scope
+    .flatMap((root) => Array.from(root.querySelectorAll("button")))
+    .find((btn) => isVisibleElement(btn) && isDeleteConfirmText(btn.innerText));
+
+  if (confirmButton) {
+    console.log("🧹 Confirming deletion:", confirmButton.innerText);
+    clickElement(confirmButton);
+    setTimeout(() => waitForBidRowGone(0, countBefore), 1500);
     return;
   }
 
-  console.log("🧹 Bid state still visible for target size, retrying verification...");
-  setTimeout(() => {
-    checkIfBidRemovedForSelectedSize(attempt + 1);
-  }, 1000);
+  // No confirmation seen: the delete may have gone through without one.
+  if (attempt >= 5) {
+    waitForBidRowGone(0, countBefore);
+    return;
+  }
+
+  setTimeout(() => confirmBidDeletion(attempt + 1, countBefore), 800);
+}
+
+async function waitForBidRowGone(attempt, countBefore) {
+  if (findMatchingBidRows().length < countBefore) {
+    reportTaskResult(getRemoveSuccessAction(), { errorMessage: "" });
+    return;
+  }
+
+  if (attempt < 10) {
+    setTimeout(() => waitForBidRowGone(attempt + 1, countBefore), 1000);
+    return;
+  }
+
+  // The list may not refresh by itself; a fresh load settles it either way.
+  await chrome.storage.local.set({
+    [REMOVE_RECHECK_KEY]: { recordId: currentTask.recordId, at: Date.now() }
+  });
+
+  window.location.href = getBidsSearchUrl(getRemoveSearchSku());
 }
 
 function goToOfferPage() {

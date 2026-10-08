@@ -243,6 +243,7 @@ export async function buildSecondBidRemoveTask(record) {
     recordId: record.id,
     sku,
     size: fields["Size"],
+    currentBid: getSecondCurrentBid(fields),
     stockxUrl
   };
 }
