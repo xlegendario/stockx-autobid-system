@@ -1799,10 +1799,18 @@ function isVisibleElement(el) {
 }
 
 function findBidRows() {
+  // A live bid has Edit; an expired one shows Renew Offer instead.
   const hasEditButton = (el) =>
     Array.from(el.querySelectorAll("button, a, [role='button']")).some(
-      (btn) => normalizeText(btn.innerText) === "edit"
+      (btn) => btn.classList.contains("edit-button") || normalizeText(btn.innerText) === "edit"
     );
+
+  // StockX marks each row of the table; fall back to the shape of a row.
+  const markedRows = Array.from(document.querySelectorAll('tr[data-testid="order-detail-row"]'));
+
+  if (markedRows.length > 0) {
+    return markedRows.filter((row) => isVisibleElement(row) && hasEditButton(row));
+  }
 
   const candidates = Array.from(
     document.querySelectorAll("tr, [role='row'], li, div")
@@ -1825,6 +1833,9 @@ function findMatchingBidRows() {
 }
 
 function findTrashButton(row) {
+  const marked = row.querySelector('[data-testid="following-delete-cell"]');
+  if (marked) return marked;
+
   const buttons = Array.from(row.querySelectorAll("button, [role='button'], a")).filter(isVisibleElement);
 
   const labelled = buttons.find((btn) => {
@@ -1841,10 +1852,24 @@ function findTrashButton(row) {
   return buttons.slice(editIndex + 1).find((btn) => !normalizeText(btn.innerText)) || null;
 }
 
+/*
+ * A search that matches nothing may leave the full list of bids on screen
+ * (seen with an order number in the box: all 94 bids, with a Next button).
+ * Matching on size there would hit another product's bid. One SKU never
+ * fills a page, so a Next button means the list is not ours to act on.
+ */
+function isBidsListFilteredOnSku() {
+  return !Array.from(document.querySelectorAll("button")).some(
+    (btn) => isVisibleElement(btn) && normalizeText(btn.innerText) === "next"
+  );
+}
+
 function isBidsListLoaded() {
   const pageText = getPageText();
 
   return (
+    // Any row counts here, expired ones too: they show the list has loaded.
+    document.querySelectorAll('tr[data-testid="order-detail-row"]').length > 0 ||
     findBidRows().length > 0 ||
     pageText.includes("you don't have active bids") ||
     pageText.includes("items that you are bidding on will show up here")
@@ -1880,6 +1905,13 @@ async function handleRemoveBidsPage(attempt = 0, previousCount = null) {
   // Results can still be filling in; act on a count seen twice in a row.
   if (previousCount === null || previousCount !== matching.length) {
     setTimeout(() => handleRemoveBidsPage(attempt + 1, matching.length), 1500);
+    return;
+  }
+
+  if (!isBidsListFilteredOnSku()) {
+    reportTaskResult(getRemoveFailedAction(), {
+      errorMessage: `Offers & Bids for ${sku} has more than one page, so the search did not filter it; nothing was touched`
+    });
     return;
   }
 
