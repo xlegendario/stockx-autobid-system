@@ -269,6 +269,39 @@ function needsOrderSync(fields) {
   return Number(fields["Needs StockX Order Sync"]) === 1;
 }
 
+/*
+ * An order StockX no longer shows, given up on.
+ *
+ * The only way out of the sync queue is a tracking URL, so an order that
+ * never gets one is asked for again every two hours for ever. On 08-10-2026
+ * that was 629 orders going back to April, every one of them answering
+ * "Could not find order row" - thousands of wasted tasks a day, and a runner
+ * whose last result was permanently a failure, which is what kept setting
+ * the Discord alert off.
+ *
+ * Age alone is too blunt: the youngest of those was five days old, and 103
+ * other orders in the queue are simply waiting for a parcel. What separates
+ * them is that one group has already been looked for and not found. So both
+ * have to be true - old, and last seen missing. Nothing that is syncing
+ * cleanly is touched by this.
+ *
+ * Thirty days is where it stops being worth looking: the parcel is long
+ * delivered and its tracking link helps nobody.
+ */
+const GIVE_UP_AFTER_DAYS = 30;
+
+function orderIsGoneFromStockx(record) {
+  const message = String(record?.fields?.ErrorMessage || "");
+
+  if (!message.includes("Could not find order row")) return false;
+
+  const made = new Date(record?.createdTime || 0).getTime();
+
+  if (!made) return false;
+
+  return Date.now() - made > GIVE_UP_AFTER_DAYS * 24 * 60 * 60 * 1000;
+}
+
 function getStockxOrderNumber(fields) {
   const raw = fields["StockX Order Number"];
   if (raw === undefined || raw === null) return null;
@@ -628,6 +661,7 @@ export async function buildTask(
     }
 
     if (!needsOrderSync(f)) continue;
+    if (orderIsGoneFromStockx(record)) continue;
 
     const orderNumber = getStockxOrderNumber(f);
     if (!orderNumber) continue;
@@ -653,6 +687,7 @@ export async function buildTask(
     }
 
     if (!isSecondOrderSyncCandidate(f)) continue;
+    if (orderIsGoneFromStockx(record)) continue;
 
     secondOrderSyncCandidates.push(record);
   }
