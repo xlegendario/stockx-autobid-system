@@ -34,6 +34,26 @@ async function onPageReady() {
   const stored = await chrome.storage.local.get("currentTask");
   currentTask = stored.currentTask || null;
 
+  // The purchase status sweep runs in the page itself; the service worker
+  // does the work once this page is up.
+  if (currentTask?.type === "PURCHASE_STATUS_SWEEP") {
+    if (window.location.pathname.startsWith("/buying/orders")) {
+      setTimeout(async () => {
+        if (await stopIfNeeded("purchase sweep")) return;
+        chrome.runtime.sendMessage({ type: "RUN_PURCHASE_SWEEP" }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn("Purchase sweep message failed:", chrome.runtime.lastError.message);
+            return;
+          }
+          console.log("Purchase sweep:", response);
+        });
+      }, 2500);
+    } else {
+      window.location.href = "https://stockx.com/buying/orders";
+    }
+    return;
+  }
+
   if (
     currentTask &&
     isRemoveTaskType(currentTask.type) &&

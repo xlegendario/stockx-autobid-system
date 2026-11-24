@@ -6,7 +6,8 @@ import { startRunnerHealthChecks } from "./runnerHealth.js";
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+// A purchase sweep posts a few hundred orders at once.
+app.use(express.json({ limit: "2mb" }));
 
 // Health check
 app.get("/health", (req, res) => {

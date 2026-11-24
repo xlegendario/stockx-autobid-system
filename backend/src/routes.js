@@ -9,6 +9,7 @@ import {
 import { buildTask, debugRecords } from "./tasks.js";
 import { submitTaskResult } from "./results.js";
 import { recordHeartbeat, getRunnerHealth } from "./runnerHealth.js";
+import { takeSweepIfDue, applyPurchaseSweep, getPurchaseSweepStatus } from "./purchaseSweep.js";
 
 const router = express.Router();
 
@@ -54,6 +55,15 @@ router.post("/tasks/next", async (req, res) => {
       : null;
     
     const minOrderDate = parseMinOrderDate(req.body.minOrderDate);
+
+    // Only runners that say they can run the sweep get it; older extensions
+    // keep receiving bid tasks exactly as before.
+    const capabilities = Array.isArray(req.body.capabilities) ? req.body.capabilities : [];
+
+    if (capabilities.includes("purchase-sweep")) {
+      const sweep = takeSweepIfDue(runnerName, accountGroupKey);
+      if (sweep) return res.json({ ok: true, task: sweep });
+    }
 
     const records = await fetchOrders();
     const activeBidRecords = await fetchActiveBids();
@@ -136,6 +146,25 @@ router.post("/runner/heartbeat", (req, res) => {
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
+});
+
+router.post("/purchase-sweep", async (req, res) => {
+  try {
+    const result = await applyPurchaseSweep({
+      runnerName: String(req.body.runnerName || "").trim().toLowerCase(),
+      accountGroupKey: String(req.body.accountGroupKey || "").trim().toLowerCase() || null,
+      orders: req.body.orders
+    });
+
+    res.json({ ok: true, result });
+  } catch (err) {
+    console.error("Purchase sweep failed:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get("/purchase-sweep/status", (req, res) => {
+  res.json({ ok: true, ...getPurchaseSweepStatus() });
 });
 
 router.get("/runner/health", (req, res) => {

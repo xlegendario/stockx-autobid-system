@@ -1,4 +1,5 @@
 import { CONFIG } from "./config.js";
+import { stockxPurchaseSweepInPage } from "./purchase-sweep.js";
 
 let isRunnerEnabled = false;
 let isTaskInProgress = false;
@@ -409,6 +410,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "RUN_PURCHASE_SWEEP") {
+    handlePurchaseSweep(sender?.tab?.id)
+      .then((response) => sendResponse(response))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
+    return true;
+  }
+
   if (message.type === "TASK_COMPLETED") {
     handleTaskCompleted(message.payload)
       .then((response) => sendResponse(response))
@@ -481,6 +490,71 @@ async function handleTaskCompleted(payload) {
 
     return { ok: false, error: err.message };
   }
+}
+
+/*
+ * The purchase status sweep: the content script on stockx.com/buying/orders
+ * asks for it, the list is read inside the page (see purchase-sweep.js) and
+ * posted to the backend, which writes the Purchase Status fields. It has no
+ * order record, so it ends here instead of going through TASK_COMPLETED.
+ */
+async function handlePurchaseSweep(tabId) {
+  const { currentTask } = await chrome.storage.local.get(["currentTask"]);
+
+  if (currentTask?.type !== "PURCHASE_STATUS_SWEEP") {
+    return { ok: false, error: "No purchase sweep is running" };
+  }
+
+  await loadState();
+
+  let failure = null;
+  let summary = null;
+
+  try {
+    if (!tabId) throw new Error("The sweep page has no tab");
+
+    const [injection] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: stockxPurchaseSweepInPage,
+      args: [{ historyDays: currentTask.historyDays || 60 }]
+    });
+
+    const page = injection?.result;
+    if (!page?.ok) throw new Error(page?.error || "The sweep returned nothing");
+
+    const res = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/purchase-sweep`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        runnerName: CONFIG.RUNNER_NAME,
+        accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
+        orders: page.orders
+      })
+    });
+
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "The backend refused the sweep");
+
+    summary = data.result;
+  } catch (err) {
+    failure = err.message;
+    console.error("Purchase sweep failed:", err);
+  }
+
+  await clearCurrentTaskState();
+  await chrome.storage.local.set({
+    lastResultAt: new Date().toISOString(),
+    lastResultAction: failure ? "PURCHASE_SWEEP_FAILED" : "PURCHASE_SWEEP_DONE",
+    ...(failure ? { lastErrorAt: new Date().toISOString(), lastError: `Purchase sweep: ${failure}` } : {})
+  });
+  await updateFailureStreak(!!failure, failure ? { action: "PURCHASE_SWEEP_FAILED", errorMessage: failure } : null);
+
+  if (isRunnerEnabled) {
+    await scheduleNextRun(failure ? ERROR_RETRY_DELAY_MS : 1000);
+  }
+
+  return failure ? { ok: false, error: failure } : { ok: true, summary };
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -747,7 +821,9 @@ async function fetchNextTask() {
     body: JSON.stringify({
       runnerName: CONFIG.RUNNER_NAME,
       accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
-      minOrderDate: CONFIG.MIN_ORDER_DATE || null
+      minOrderDate: CONFIG.MIN_ORDER_DATE || null,
+      // Tells the backend this version can run the purchase status sweep.
+      capabilities: ["purchase-sweep"]
     })
   });
 
@@ -811,6 +887,10 @@ async function submitTaskResult(payload) {
 }
 
 function buildStockXUrl(task) {
+  if (task.type === "PURCHASE_STATUS_SWEEP") {
+    return "https://stockx.com/buying/orders";
+  }
+
   // VERIFY flows → direct naar bids page
   if (
     task.type === "VERIFY_BID_STATUS" ||
