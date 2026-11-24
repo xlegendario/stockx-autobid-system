@@ -2,19 +2,23 @@
  * Purchase delay messages - step 2 of the after-order service.
  *
  * Runs after every purchase sweep, on MAIN-account StockX purchases that
- * have not reached us yet. Purchase to delivered at our warehouse took, for
- * 106 MAIN orders since 15-09-2026: median 5.8 days, 75% within 7.9, 90%
- * within 9.7, 95% within 11.6. StockX ships to us with DPD, UPS or DHL
- * (also DHL Express from Japan), all in 1-4 days. So a pair that is not on
- * its way to us by day 6 lands later than usual, and the store is told then
- * - roughly one order in four, on purpose: early, while nothing is wrong yet.
+ * have not reached us yet, counting working days (Mon-Fri, Amsterdam time).
  *
- *   first message  - the seller missed StockX's ship-by deadline (day 2-3),
- *                    or the pair is not on its way to us after FIRST_DAYS (6),
- *                    or it has been on its way for TRANSIT_DAYS (4) and is
- *                    still not delivered (a carrier problem)
- *   second message - still not delivered after SECOND_DAYS (11), or stuck in
- *                    transit after the first message
+ * Purchase to delivered at our warehouse, 106 MAIN orders since 15-09-2026:
+ * on average 4.5 working days (6.0 calendar days); later than 6 working days
+ * 20%, than 7 10%, than 8 5%, than 10 2%. StockX ships to us with DPD, UPS
+ * or DHL (also DHL Express from Japan), all in 1-3 working days. So:
+ *
+ *   first message  - not on its way to us after FIRST_DAYS (6) working days;
+ *                    such a pair lands after 7-9 at the earliest, about one
+ *                    order in ten to twelve. Or on its way for TRANSIT_DAYS
+ *                    (3) working days and still not delivered.
+ *   second message - still not delivered after SECOND_DAYS (10) working
+ *                    days, or stuck in transit after the first message.
+ *
+ * The seller's ship-by deadline is recorded but sends nothing yet: how often
+ * a seller is late and the pair still arrives on time is not known, and a
+ * message on every late seller could be mostly noise.
  *
  * GOAT ships with Aramex, which takes a week more; it gets its own rules when
  * GOAT is added.
@@ -34,14 +38,31 @@ const TABLE_NAME = process.env.AIRTABLE_TABLE_NAME;
 const TOKEN = process.env.AIRTABLE_TOKEN;
 
 const FIRST_DAYS = Number(process.env.PURCHASE_FIRST_WARNING_DAYS) || 6;
-const TRANSIT_DAYS = Number(process.env.PURCHASE_TRANSIT_WARNING_DAYS) || 4;
-const SECOND_DAYS = Number(process.env.PURCHASE_SECOND_WARNING_DAYS) || 11;
-const SHIP_BY_GRACE_HOURS = Number(process.env.PURCHASE_SHIP_BY_GRACE_HOURS) || 12;
+const TRANSIT_DAYS = Number(process.env.PURCHASE_TRANSIT_WARNING_DAYS) || 3;
+const SECOND_DAYS = Number(process.env.PURCHASE_SECOND_WARNING_DAYS) || 10;
 const ARRIVAL_CHECK_DAYS = Number(process.env.PURCHASE_ARRIVAL_CHECK_DAYS) || 2;
 
 const DAY = 24 * 60 * 60 * 1000;
 
-const NOT_SHIPPED = new Set(["ORDER_CREATED", "SELLER_GENERATED_LABEL"]);
+// Working days between two moments: weekdays passed, by Amsterdam date.
+// Bought on a Monday and checked on Wednesday is 2.
+function amsterdamDay(ms) {
+  const [y, m, d] = new Date(ms).toLocaleDateString("en-CA", { timeZone: "Europe/Amsterdam" }).split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+export function workingDaysBetween(fromMs, toMs) {
+  let day = amsterdamDay(fromMs);
+  const end = amsterdamDay(toMs);
+  let count = 0;
+  while (day < end) {
+    day += DAY;
+    const weekday = new Date(day).getUTCDay();
+    if (weekday !== 0 && weekday !== 6) count++;
+  }
+  return count;
+}
+
 const ON_ITS_WAY_TO_US = new Set(["AC_SHIPPED"]);
 const FINISHED = new Set(["BUYER_RECEIVED", "CANCELLED"]);
 
@@ -135,7 +156,7 @@ function orderLabel(f) {
 
 function inTransitTooLong(f, status, now) {
   const since = time(f["Purchase Status Since"]);
-  return ON_ITS_WAY_TO_US.has(status) && since && now - since >= TRANSIT_DAYS * DAY;
+  return ON_ITS_WAY_TO_US.has(status) && since && workingDaysBetween(since, now) >= TRANSIT_DAYS;
 }
 
 /*
@@ -147,11 +168,11 @@ export function dueMessage(f, now = Date.now()) {
   const purchased = time(f["First StockX Order Placed At"]) ?? time(f["Order Date"]);
   if (!status || !purchased) return null;
 
-  const days = (now - purchased) / DAY;
+  const days = workingDaysBetween(purchased, now);
 
   if (status === "BUYER_RECEIVED") {
     const since = time(f["Purchase Status Since"]);
-    if (!f["Purchase Arrival Check Sent At"] && since && now - since >= ARRIVAL_CHECK_DAYS * DAY) {
+    if (!f["Purchase Arrival Check Sent At"] && since && workingDaysBetween(since, now) >= ARRIVAL_CHECK_DAYS) {
       return { kind: "arrival", reason: "delivered by the marketplace but not booked in" };
     }
     return null;
@@ -160,10 +181,6 @@ export function dueMessage(f, now = Date.now()) {
   if (FINISHED.has(status)) return null;
 
   if (!f["Purchase Delay Warning Sent At"]) {
-    const shipBy = time(f["Purchase Seller Ship By"]);
-    if (NOT_SHIPPED.has(status) && shipBy && now > shipBy + SHIP_BY_GRACE_HOURS * 60 * 60 * 1000) {
-      return { kind: "first", reason: "seller_late", shipBy };
-    }
     if (days >= FIRST_DAYS && !ON_ITS_WAY_TO_US.has(status)) {
       return { kind: "first", reason: "slow" };
     }
@@ -192,12 +209,7 @@ export function storeMessage(f, due) {
   let title;
   let body;
 
-  if (due.kind === "first" && due.reason === "seller_late") {
-    title = `⏳ Shipping delay - ${orderLabel(f)}`;
-    body =
-      `The seller of this pair has not shipped it yet (it was due on ${shortDate(due.shipBy)}). ` +
-      "We are following it closely and will let you know as soon as it moves - or if we need to source it elsewhere.";
-  } else if (due.reason === "transit") {
+  if (due.reason === "transit") {
     title = `⏳ Delay in transit - ${orderLabel(f)}`;
     body =
       "This pair is on its way to our warehouse, but the carrier is taking longer than usual. " +
@@ -334,7 +346,7 @@ export function getPurchaseAlertsStatus() {
     firstWarningDays: FIRST_DAYS,
     transitWarningDays: TRANSIT_DAYS,
     secondWarningDays: SECOND_DAYS,
-    shipByGraceHours: SHIP_BY_GRACE_HOURS,
+    countedIn: "working days (Mon-Fri, Europe/Amsterdam)",
     lastRun
   };
 }
