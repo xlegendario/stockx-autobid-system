@@ -10,6 +10,7 @@ import { buildTask, debugRecords } from "./tasks.js";
 import { submitTaskResult } from "./results.js";
 import { recordHeartbeat, getRunnerHealth } from "./runnerHealth.js";
 import { takeSweepIfDue, applyPurchaseSweep, getPurchaseSweepStatus } from "./purchaseSweep.js";
+import { runPurchaseAlerts, getPurchaseAlertsStatus } from "./purchaseAlerts.js";
 
 const router = express.Router();
 
@@ -157,6 +158,9 @@ router.post("/purchase-sweep", async (req, res) => {
     });
 
     res.json({ ok: true, result });
+
+    // The fields are fresh now; check for delays without holding the runner.
+    runPurchaseAlerts().catch((err) => console.error("Purchase alerts failed:", err));
   } catch (err) {
     console.error("Purchase sweep failed:", err);
     res.status(500).json({ ok: false, error: err.message });
@@ -164,7 +168,7 @@ router.post("/purchase-sweep", async (req, res) => {
 });
 
 router.get("/purchase-sweep/status", (req, res) => {
-  res.json({ ok: true, ...getPurchaseSweepStatus() });
+  res.json({ ok: true, ...getPurchaseSweepStatus(), alerts: getPurchaseAlertsStatus() });
 });
 
 router.get("/runner/health", (req, res) => {

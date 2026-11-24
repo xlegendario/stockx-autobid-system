@@ -10,13 +10,20 @@
  * from the backend). The session token never leaves the page: it is read
  * from the page's own request and sent straight back to StockX.
  *
- * Returns { ok, orders: [{ orderNumber, statusKey, statusTitle, purchaseDate,
- * etaFrom, etaUntil, amount, size }], pages } or { ok: false, error }.
+ * Orders the seller has not shipped yet also get StockX's ship-by deadline
+ * for the seller, from the order detail query (getBuyOrder) - a handful per
+ * sweep at most.
+ *
+ * Returns { ok, orders: [{ open, orderNumber, statusKey, statusTitle,
+ * purchaseDate, etaFrom, etaUntil, sellerShipBy, amount, size }], pages } or
+ * { ok: false, error }.
  */
 export async function stockxPurchaseSweepInPage(options) {
   const since = new Date(options?.historySince || Date.now() - 30 * 24 * 60 * 60 * 1000).getTime();
   const maxPages = Number(options?.maxPages) || 12;
   const KNOWN_HASH = "1c6bd81d62599316be18d6a2b2e9ae1c92967bc6fcbe69f8e5cc2935dc75a167";
+  const KNOWN_ORDER_HASH = "4d74ad3a6113338a65031d44ee5d93718408e59250c73ed74f80deaebb59d1a2";
+  const NOT_SHIPPED = new Set(["ORDER_CREATED", "SELLER_GENERATED_LABEL"]);
   const GATEWAY = "https://gateway.stockx.com/api/graphql";
 
   const originalFetch = window.fetch;
@@ -125,6 +132,7 @@ export async function stockxPurchaseSweepInPage(options) {
           }
 
           orders.push({
+            chainId: node.chainId || null,
             open: state === "PENDING",
             orderNumber: node.orderNumber || node.orderId || null,
             statusKey: node.state?.statusKey || null,
@@ -145,7 +153,43 @@ export async function stockxPurchaseSweepInPage(options) {
       pages[state] = count;
     }
 
-    return { ok: true, orders, pages, usedKnownHash: !tableRequest };
+    // The seller's ship-by deadline is only on the order detail. A failure here
+    // costs that one date, never the sweep.
+    let shipByFailures = 0;
+    for (const order of orders) {
+      if (!order.open || !NOT_SHIPPED.has(order.statusKey) || !order.chainId) continue;
+
+      try {
+        const res = await originalFetch(GATEWAY, {
+          method: "POST",
+          credentials: "include",
+          headers: { ...headers, "x-operation-name": "getBuyOrder" },
+          body: JSON.stringify({
+            operationName: "getBuyOrder",
+            variables: {
+              chainId: order.chainId,
+              country: baseVariables.country,
+              market: baseVariables.market,
+              isShipByDateEnabled: true,
+              isDFSUpdatesEnabled: true,
+              isMysteryBoxEnabled: false
+            },
+            extensions: { persistedQuery: { version: 1, sha256Hash: KNOWN_ORDER_HASH } }
+          })
+        });
+        const json = await res.json();
+        order.sellerShipBy = json.data?.viewer?.order?.sellerShipByDateRange?.actual || null;
+        if (json.errors?.length) shipByFailures++;
+      } catch {
+        shipByFailures++;
+      }
+
+      await sleep(300);
+    }
+
+    for (const order of orders) delete order.chainId;
+
+    return { ok: true, orders, pages, usedKnownHash: !tableRequest, shipByFailures };
   } catch (err) {
     return { ok: false, error: String(err?.message || err) };
   } finally {

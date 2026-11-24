@@ -30,6 +30,7 @@ const KNOWN_STOCKX_STATUSES = new Set([
   "SELLER_SHIPPED",
   "AC_RECEIVED",
   "AC_AUTHENTICATION_SUCCESS",
+  "AC_STAGED_TO_SHIP",
   "AC_SHIPPED",
   "BUYER_RECEIVED",
   "CANCELLED"
@@ -45,7 +46,8 @@ const FIELD = {
   title: "Purchase Status Title",
   since: "Purchase Status Since",
   etaFrom: "Purchase ETA From",
-  etaUntil: "Purchase ETA Until"
+  etaUntil: "Purchase ETA Until",
+  sellerShipBy: "Purchase Seller Ship By"
 };
 
 const lastHandedOut = new Map();
@@ -186,6 +188,9 @@ function changesFor(fields, order, now) {
   const etaUntil = isoOrNull(order.etaUntil);
   if (etaFrom && !sameMoment(fields[FIELD.etaFrom], etaFrom)) update[FIELD.etaFrom] = etaFrom;
   if (etaUntil && !sameMoment(fields[FIELD.etaUntil], etaUntil)) update[FIELD.etaUntil] = etaUntil;
+
+  const shipBy = isoOrNull(order.sellerShipBy);
+  if (shipBy && !sameMoment(fields[FIELD.sellerShipBy], shipBy)) update[FIELD.sellerShipBy] = shipBy;
 
   return Object.keys(update).length ? update : null;
 }
