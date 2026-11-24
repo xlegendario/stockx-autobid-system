@@ -6,14 +6,15 @@
  * GraphQL query GetBuyingTableData. This lets the page make that request
  * itself (by switching tabs), takes the headers, hash and variables it used,
  * and asks the same question for every page of open orders and for history
- * back to `historyDays`. The session token never leaves the page: it is read
+ * back to `historySince` (the oldest order still open at the last sweep,
+ * from the backend). The session token never leaves the page: it is read
  * from the page's own request and sent straight back to StockX.
  *
  * Returns { ok, orders: [{ orderNumber, statusKey, statusTitle, purchaseDate,
  * etaFrom, etaUntil, amount, size }], pages } or { ok: false, error }.
  */
 export async function stockxPurchaseSweepInPage(options) {
-  const historyDays = Number(options?.historyDays) || 60;
+  const since = new Date(options?.historySince || Date.now() - 30 * 24 * 60 * 60 * 1000).getTime();
   const maxPages = Number(options?.maxPages) || 12;
   const KNOWN_HASH = "1c6bd81d62599316be18d6a2b2e9ae1c92967bc6fcbe69f8e5cc2935dc75a167";
   const GATEWAY = "https://gateway.stockx.com/api/graphql";
@@ -99,7 +100,7 @@ export async function stockxPurchaseSweepInPage(options) {
       return json.data?.viewer?.buying;
     }
 
-    const cutoff = Date.now() - historyDays * 24 * 60 * 60 * 1000;
+    const cutoff = Number.isFinite(since) ? since : Date.now() - 30 * 24 * 60 * 60 * 1000;
     const orders = [];
     const pages = {};
 
@@ -124,6 +125,7 @@ export async function stockxPurchaseSweepInPage(options) {
           }
 
           orders.push({
+            open: state === "PENDING",
             orderNumber: node.orderNumber || node.orderId || null,
             statusKey: node.state?.statusKey || null,
             statusTitle: node.state?.statusTitle || node.status || null,

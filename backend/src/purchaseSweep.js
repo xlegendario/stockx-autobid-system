@@ -35,6 +35,9 @@ const KNOWN_STOCKX_STATUSES = new Set([
   "CANCELLED"
 ]);
 
+// Nothing follows these; an order in one of them is done.
+const FINAL_STOCKX_STATUSES = new Set(["BUYER_RECEIVED", "CANCELLED"]);
+
 const FIELD = {
   orderNumber: "StockX Order Number",
   marketplace: "Purchase Marketplace",
@@ -47,6 +50,14 @@ const FIELD = {
 
 const lastHandedOut = new Map();
 const lastResults = new Map();
+
+// Per runner: purchase date of the oldest order that was still open at the
+// last sweep. History is only needed for orders that leave the open list
+// (delivered or cancelled), and an order can only have left it if it was
+// open last time - so history is read back to there and no further.
+const oldestOpenPurchase = new Map();
+const HISTORY_MARGIN_MS = 24 * 60 * 60 * 1000;
+const FIRST_SWEEP_HISTORY_DAYS = Number(process.env.PURCHASE_SWEEP_FIRST_HISTORY_DAYS) || 30;
 
 function runnerKey(runnerName, accountGroupKey) {
   return `${String(runnerName || "").toLowerCase()}|${String(accountGroupKey || "-").toLowerCase()}`;
@@ -65,11 +76,16 @@ export function takeSweepIfDue(runnerName, accountGroupKey) {
 
   lastHandedOut.set(key, Date.now());
 
+  const oldest = oldestOpenPurchase.get(key);
+  const historySince = new Date(
+    oldest ? oldest - HISTORY_MARGIN_MS : Date.now() - FIRST_SWEEP_HISTORY_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
   return {
     type: "PURCHASE_STATUS_SWEEP",
     recordId: null,
     marketplace: "StockX",
-    historyDays: Number(process.env.PURCHASE_SWEEP_HISTORY_DAYS) || 60
+    historySince
   };
 }
 
@@ -176,6 +192,18 @@ function changesFor(fields, order, now) {
 
 export async function applyPurchaseSweep({ runnerName, accountGroupKey, orders }) {
   if (!Array.isArray(orders)) throw new Error("orders must be a list");
+
+  // StockX can leave a finished order in the open list (a cancelled one from
+  // 2025 sits there); it would drag history back by a year.
+  const openPurchaseTimes = orders
+    .filter((order) => order?.open && !FINAL_STOCKX_STATUSES.has(order.statusKey))
+    .map((order) => new Date(order.purchaseDate).getTime())
+    .filter(Number.isFinite);
+
+  oldestOpenPurchase.set(
+    runnerKey(runnerName, accountGroupKey),
+    openPurchaseTimes.length ? Math.min(...openPurchaseTimes) : Date.now()
+  );
 
   const startedAt = Date.now();
   const now = new Date().toISOString();

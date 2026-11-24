@@ -517,7 +517,7 @@ async function handlePurchaseSweep(tabId) {
       target: { tabId },
       world: "MAIN",
       func: stockxPurchaseSweepInPage,
-      args: [{ historyDays: currentTask.historyDays || 60 }]
+      args: [{ historySince: currentTask.historySince || null }]
     });
 
     const page = injection?.result;
