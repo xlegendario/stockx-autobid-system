@@ -4,13 +4,20 @@
  * Runs after every purchase sweep, on MAIN-account StockX purchases that
  * have not reached us yet. Purchase to delivered at our warehouse took, for
  * 106 MAIN orders since 15-09-2026: median 5.8 days, 75% within 7.9, 90%
- * within 9.7, 95% within 11.6. A warning on a fixed day 6 would hit almost
- * half of all orders, so the store hears from us only when an order is
- * really behind:
+ * within 9.7, 95% within 11.6. StockX ships to us with DPD, UPS or DHL
+ * (also DHL Express from Japan), all in 1-4 days. So a pair that is not on
+ * its way to us by day 6 lands later than usual, and the store is told then
+ * - roughly one order in four, on purpose: early, while nothing is wrong yet.
  *
- *   first message  - the seller missed StockX's ship-by deadline, or the
- *                    pair is still not on its way to us after FIRST_DAYS (8)
- *   second message - still not delivered after SECOND_DAYS (11)
+ *   first message  - the seller missed StockX's ship-by deadline (day 2-3),
+ *                    or the pair is not on its way to us after FIRST_DAYS (6),
+ *                    or it has been on its way for TRANSIT_DAYS (4) and is
+ *                    still not delivered (a carrier problem)
+ *   second message - still not delivered after SECOND_DAYS (11), or stuck in
+ *                    transit after the first message
+ *
+ * GOAT ships with Aramex, which takes a week more; it gets its own rules when
+ * GOAT is added.
  *
  * StockX's own delivery estimate is far too wide and is never shown to the
  * store. Messages go to the store's shipment-delays channel (Merchants
@@ -26,7 +33,8 @@ const BASE_ID = process.env.AIRTABLE_BASE_ID;
 const TABLE_NAME = process.env.AIRTABLE_TABLE_NAME;
 const TOKEN = process.env.AIRTABLE_TOKEN;
 
-const FIRST_DAYS = Number(process.env.PURCHASE_FIRST_WARNING_DAYS) || 8;
+const FIRST_DAYS = Number(process.env.PURCHASE_FIRST_WARNING_DAYS) || 6;
+const TRANSIT_DAYS = Number(process.env.PURCHASE_TRANSIT_WARNING_DAYS) || 4;
 const SECOND_DAYS = Number(process.env.PURCHASE_SECOND_WARNING_DAYS) || 11;
 const SHIP_BY_GRACE_HOURS = Number(process.env.PURCHASE_SHIP_BY_GRACE_HOURS) || 12;
 const ARRIVAL_CHECK_DAYS = Number(process.env.PURCHASE_ARRIVAL_CHECK_DAYS) || 2;
@@ -125,6 +133,11 @@ function orderLabel(f) {
   return shopify ? `Order ${shopify.startsWith("#") ? shopify : `#${shopify}`}` : `Order ${text(f["Order ID"])}`;
 }
 
+function inTransitTooLong(f, status, now) {
+  const since = time(f["Purchase Status Since"]);
+  return ON_ITS_WAY_TO_US.has(status) && since && now - since >= TRANSIT_DAYS * DAY;
+}
+
 /*
  * Decide, per order, which message is due now. Pure, so it can be tested.
  * Returns null or { kind: "first" | "second" | "arrival", reason }.
@@ -154,11 +167,18 @@ export function dueMessage(f, now = Date.now()) {
     if (days >= FIRST_DAYS && !ON_ITS_WAY_TO_US.has(status)) {
       return { kind: "first", reason: "slow" };
     }
+    if (inTransitTooLong(f, status, now)) {
+      return { kind: "first", reason: "transit" };
+    }
     return null;
   }
 
-  if (!f["Purchase Delay Second Warning Sent At"] && days >= SECOND_DAYS) {
-    return { kind: "second", reason: "still_not_delivered" };
+  if (!f["Purchase Delay Second Warning Sent At"]) {
+    if (days >= SECOND_DAYS) return { kind: "second", reason: "still_not_delivered" };
+    if (inTransitTooLong(f, status, now) && time(f["Purchase Delay Warning Sent At"]) < time(f["Purchase Status Since"])) {
+      // Warned while it was still at the seller or StockX, and now stuck with the carrier.
+      return { kind: "second", reason: "transit" };
+    }
   }
 
   return null;
@@ -177,10 +197,15 @@ export function storeMessage(f, due) {
     body =
       `The seller of this pair has not shipped it yet (it was due on ${shortDate(due.shipBy)}). ` +
       "We are following it closely and will let you know as soon as it moves - or if we need to source it elsewhere.";
-  } else if (due.kind === "first") {
-    title = `⏳ Taking longer than usual - ${orderLabel(f)}`;
+  } else if (due.reason === "transit") {
+    title = `⏳ Delay in transit - ${orderLabel(f)}`;
     body =
-      "This order is taking longer than our usual delivery time. " +
+      "This pair is on its way to our warehouse, but the carrier is taking longer than usual. " +
+      "We are following it closely and will let you know as soon as it arrives.";
+  } else if (due.kind === "first") {
+    title = `⏳ May arrive a bit later - ${orderLabel(f)}`;
+    body =
+      "This order is not on its way to our warehouse yet, so it may arrive a little later than usual. " +
       "We are following it closely and will let you know if anything changes.";
   } else {
     title = `⏳ Still on its way - ${orderLabel(f)}`;
@@ -307,6 +332,7 @@ export function getPurchaseAlertsStatus() {
   return {
     mode: mode(),
     firstWarningDays: FIRST_DAYS,
+    transitWarningDays: TRANSIT_DAYS,
     secondWarningDays: SECOND_DAYS,
     shipByGraceHours: SHIP_BY_GRACE_HOURS,
     lastRun
