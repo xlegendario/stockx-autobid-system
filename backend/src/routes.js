@@ -11,6 +11,7 @@ import { submitTaskResult } from "./results.js";
 import { recordHeartbeat, getRunnerHealth } from "./runnerHealth.js";
 import { takeSweepIfDue, applyPurchaseSweep, getPurchaseSweepStatus } from "./purchaseSweep.js";
 import { runPurchaseAlerts, getPurchaseAlertsStatus } from "./purchaseAlerts.js";
+import { runPurchaseCancels, getPurchaseCancelsStatus } from "./purchaseCancels.js";
 
 const router = express.Router();
 
@@ -159,8 +160,13 @@ router.post("/purchase-sweep", async (req, res) => {
 
     res.json({ ok: true, result });
 
-    // The fields are fresh now; check for delays without holding the runner.
-    runPurchaseAlerts().catch((err) => console.error("Purchase alerts failed:", err));
+    // The fields are fresh now; check for delays and cancellations without
+    // holding the runner. Cancels after alerts, one at a time: both read the
+    // same orders.
+    runPurchaseAlerts()
+      .catch((err) => console.error("Purchase alerts failed:", err))
+      .then(() => runPurchaseCancels())
+      .catch((err) => console.error("Purchase cancels failed:", err));
   } catch (err) {
     console.error("Purchase sweep failed:", err);
     res.status(500).json({ ok: false, error: err.message });
@@ -168,7 +174,7 @@ router.post("/purchase-sweep", async (req, res) => {
 });
 
 router.get("/purchase-sweep/status", (req, res) => {
-  res.json({ ok: true, ...getPurchaseSweepStatus(), alerts: getPurchaseAlertsStatus() });
+  res.json({ ok: true, ...getPurchaseSweepStatus(), alerts: getPurchaseAlertsStatus(), cancels: getPurchaseCancelsStatus() });
 });
 
 router.get("/runner/health", (req, res) => {
