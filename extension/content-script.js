@@ -944,7 +944,7 @@ async function handleVerifyBidsPage() {
 
   if (!lookup.complete) {
     reportTaskResult("VERIFY_FAILED", {
-      errorMessage: "Bid lookup did not get the full list of bids and orders from StockX"
+      errorMessage: `Bid lookup did not get the full list of bids and orders from StockX${lookup.ordersError ? `: ${lookup.ordersError}` : ""}`
     });
     return;
   }

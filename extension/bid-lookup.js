@@ -44,10 +44,13 @@ export async function stockxBidLookupInPage(options) {
           ? Object.fromEntries(init.headers.entries())
           : { ...(init?.headers || {}) };
 
-        if (!headers && (sent.authorization || sent.Authorization)) headers = sent;
-
+        // Only the table's own request: headers of other queries on the page
+        // (FetchBuyQty, ...) made StockX refuse the orders list.
         const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
-        if (body?.operationName === "GetBuyingTableData") tableRequest = body;
+        if (body?.operationName === "GetBuyingTableData" && (sent.authorization || sent.Authorization)) {
+          headers = sent;
+          tableRequest = body;
+        }
       }
     } catch {
       // Watching must never break the page's own request.
@@ -87,9 +90,11 @@ export async function stockxBidLookupInPage(options) {
   };
 
   try {
-    triggerSearch("");
+    // An empty search on an empty box changes nothing and asks nothing, so
+    // the SKU is typed (in the table's own box, which only filters the table).
+    triggerSearch(String(options?.sku || "").split("/")[0].trim());
     if (!(await waitForHeaders())) {
-      triggerSearch(String(options?.sku || "").split("/")[0].trim());
+      triggerSearch("");
       if (!(await waitForHeaders())) {
         for (const pattern of [/^History/, /^Orders/, /^Bids/]) {
           clickTab(pattern);
@@ -175,15 +180,24 @@ export async function stockxBidLookupInPage(options) {
       amount: node.amount ?? null
     }));
 
-    const orders = (await readAll("PENDING")).map((node) => ({
-      orderNumber: node.orderNumber || null,
-      style: node.productVariant?.product?.styleId || null,
-      size: node.localizedSizeTitle || null,
-      statusKey: node.state?.statusKey || null,
-      purchaseDate: node.purchaseDate || null
-    }));
+    // A failing orders list does not undo a live bid that was found; it only
+    // leaves the answer incomplete, so nothing can be called missing.
+    let orders = [];
+    let ordersError = null;
+    try {
+      orders = (await readAll("PENDING")).map((node) => ({
+        orderNumber: node.orderNumber || null,
+        style: node.productVariant?.product?.styleId || null,
+        size: node.localizedSizeTitle || null,
+        statusKey: node.state?.statusKey || null,
+        purchaseDate: node.purchaseDate || null
+      }));
+    } catch (err) {
+      ordersError = String(err?.message || err);
+      complete = false;
+    }
 
-    return { ok: true, complete, bids, orders };
+    return { ok: true, complete, bids, orders, ordersError };
   } catch (err) {
     return { ok: false, error: String(err?.message || err) };
   } finally {
