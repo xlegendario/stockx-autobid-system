@@ -951,6 +951,7 @@ async function handleVerifyBidsPage() {
 
   console.log("❌ Verify: no live bid and no open order in this size");
   reportTaskResult(getVerifyMissingNoOrderAction(), {
+    checkedBy: "bid-lookup",
     errorMessage: `No live bid or open order for ${currentTask.sku} ${currentTask.size} ` +
       `(${(lookup.bids || []).length} bids, ${(lookup.orders || []).length} orders on this SKU)`
   });

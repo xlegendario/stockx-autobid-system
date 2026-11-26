@@ -195,6 +195,23 @@ export async function submitTaskResult(recordId, payload) {
     });
   }
 
+  /*
+   * "Missing" takes a record out of verifying for good, so it is only taken
+   * from a runner that checked StockX's full list of bids and orders
+   * (extension 1.3.0+, bid-lookup.js). An older runner judged it from the
+   * search page and wrote off live bids; its verdict is noted and ignored.
+   */
+  if (
+    (payload.action === "BID_MISSING_NO_ORDER_FOUND" ||
+      payload.action === "SECOND_BID_MISSING_NO_ORDER_FOUND") &&
+    payload.checkedBy !== "bid-lookup"
+  ) {
+    return await updateOrder(recordId, {
+      LastSyncAt: now,
+      ErrorMessage: "Ignored a missing-bid report from a runner without the full StockX lookup (update the extension)"
+    });
+  }
+
   if (payload.action === "BID_MISSING_NO_ORDER_FOUND") {
     return await updateOrder(recordId, {
       LastAction: "BID_MISSING_NO_ORDER_FOUND",
