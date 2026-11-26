@@ -58,11 +58,13 @@ export async function stockxBidLookupInPage(options) {
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  // Searching makes the page ask for its table again, which shows the
-  // session headers to reuse.
+  // Searching in the table's own box ("Search name, order #") makes the page
+  // ask for its table again, which shows the session headers to reuse. Never
+  // the product search at the top of the page: Enter there leaves for
+  // stockx.com/search.
   const triggerSearch = (text) => {
     const input = Array.from(document.querySelectorAll("input"))
-      .find((el) => /search/i.test(el.getAttribute("placeholder") || ""));
+      .find((el) => /order/i.test(el.getAttribute("placeholder") || ""));
     if (!input) return false;
 
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
@@ -125,23 +127,32 @@ export async function stockxBidLookupInPage(options) {
         const variables = { ...baseVariables, first: 50, state, sort: "MATCHED_AT", order: "DESC" };
         if (after) variables.after = after;
 
-        const res = await originalFetch(GATEWAY, {
-          method: "POST",
-          credentials: "include",
-          headers: { ...headers, "x-operation-name": "GetBuyingTableData" },
-          body: JSON.stringify({
-            operationName: "GetBuyingTableData",
-            variables,
-            extensions: { persistedQuery: { version: 1, sha256Hash: hash } }
-          })
-        });
+        // StockX now and then answers "Failed to fetch from Subgraph"; asking
+        // again a moment later normally works.
+        let json = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (attempt) await sleep(1500 * attempt);
 
-        const json = await res.json();
-        if (json.errors?.length) {
+          const res = await originalFetch(GATEWAY, {
+            method: "POST",
+            credentials: "include",
+            headers: { ...headers, "x-operation-name": "GetBuyingTableData" },
+            body: JSON.stringify({
+              operationName: "GetBuyingTableData",
+              variables,
+              extensions: { persistedQuery: { version: 1, sha256Hash: hash } }
+            })
+          });
+
+          json = await res.json().catch(() => null);
+          if (json && !json.errors?.length && json.data?.viewer?.buying) break;
+        }
+
+        if (json?.errors?.length) {
           throw new Error(`StockX ${state}: ${json.errors.map((e) => e.message).join("; ")}`);
         }
 
-        const buying = json.data?.viewer?.buying;
+        const buying = json?.data?.viewer?.buying;
         if (!buying) throw new Error(`StockX ${state}: no buying data in the answer`);
 
         for (const edge of buying.edges || []) {
