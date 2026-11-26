@@ -113,7 +113,7 @@ function previewEmbed(trigger) {
       "The pair we had secured for this order fell through. Either through a flake from the seller or the pair had a flaw. " +
       "For more info regarding the reason please contact support.\n\n" +
       "We're sourcing a new one now; nothing needed from you. You'll receive a credit for the original invoice and a new invoice once the new pair is allocated.\n\n" +
-      "No longer needed? Cancel it below and we stop sourcing.\n\n[CANCEL]"
+      "No longer needed? Cancel it below and we stop sourcing.\n\n🔴 CANCEL (a working button in the store's channel; a preview cannot carry one)"
   };
 }
 
