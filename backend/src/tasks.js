@@ -752,8 +752,10 @@ export async function buildTask(
     return await buildSecondBidRemoveTask(chosenSecondRemove);
   }
 
-  const chosenCalculation =
-    calculationCandidates.sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime))[0];
+  // Same reason as removals: a calculation that never clears its flag (on
+  // 26-11-2026 ORD-034392 with a max bid of 0) held the oldest place and every
+  // other order of that runner waited behind it. Least recently tried goes first.
+  const chosenCalculation = calculationCandidates.sort(byLastAttempt)[0];
 
   if (chosenCalculation) {
     const fields = chosenCalculation.fields;
