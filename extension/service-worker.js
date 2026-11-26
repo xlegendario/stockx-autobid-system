@@ -1,4 +1,4 @@
-import { CONFIG } from "./config.js";
+import { CONFIG, RUNNER_PROFILES } from "./config.js";
 import { stockxPurchaseSweepInPage } from "./purchase-sweep.js";
 import { stockxBidLookupInPage } from "./bid-lookup.js";
 
@@ -115,8 +115,34 @@ async function updateFailureStreak(failed, failure = null) {
   await chrome.storage.local.set(update);
 }
 
+// The runner identity lives in chrome.storage (see config.js for why).
+// Returns null when this browser has not been given one yet.
+async function getRunnerProfile() {
+  const { runnerProfileKey } = await chrome.storage.local.get("runnerProfileKey");
+  const profile = RUNNER_PROFILES[runnerProfileKey];
+  return profile ? { key: runnerProfileKey, ...profile } : null;
+}
+
+async function requireRunnerProfile() {
+  const profile = await getRunnerProfile();
+  if (!profile) throw new Error("No runner chosen for this browser; pick one in the popup");
+  return profile;
+}
+
+async function setRunnerProfile(key) {
+  if (!RUNNER_PROFILES[key]) throw new Error(`Unknown runner: ${key}`);
+  // Switching identity mid-run would send this account's work under another
+  // name, so it is only allowed while the runner is stopped.
+  await loadState();
+  if (isRunnerEnabled) throw new Error("Stop the runner before changing which runner this is");
+  await chrome.storage.local.set({ runnerProfileKey: key });
+  return getRunnerProfile();
+}
+
 async function sendHeartbeat({ force = false, runnerEnabled = true } = {}) {
   if (!force && Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
+  const profile = await getRunnerProfile();
+  if (!profile) return;
   lastHeartbeatAt = Date.now();
 
   const data = await chrome.storage.local.get([
@@ -136,8 +162,8 @@ async function sendHeartbeat({ force = false, runnerEnabled = true } = {}) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        runnerName: CONFIG.RUNNER_NAME,
-        accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
+        runnerName: profile.RUNNER_NAME,
+        accountGroupKey: profile.ACCOUNT_GROUP_KEY,
         runnerEnabled,
         // Which code this runner is actually running. The extension is put on
         // each machine by hand, so without this there is no way to tell a
@@ -361,6 +387,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "SET_RUNNER_PROFILE") {
+    setRunnerProfile(message.key)
+      .then((profile) => sendResponse({ ok: true, profile }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
+    return true;
+  }
+
   if (message.type === "GET_RUNNER_STATUS") {
     loadState().then(async () => {
       const data = await chrome.storage.local.get([
@@ -375,9 +409,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         "lastTimeoutTask"
       ]);
       const watchdog = await chrome.alarms.get(WATCHDOG_ALARM_NAME);
+      const profile = await getRunnerProfile();
 
       sendResponse({
         ok: true,
+        runner: profile ? profile.RUNNER_NAME : null,
+        runnerProfileKey: profile ? profile.key : null,
+        runnerProfiles: Object.entries(RUNNER_PROFILES).map(([key, p]) => ({ key, label: p.label })),
         isRunnerEnabled,
         isTaskInProgress,
         forceStop: data.forceStop === true,
@@ -564,12 +602,13 @@ async function handlePurchaseSweep(tabId) {
     const page = injection?.result;
     if (!page?.ok) throw new Error(page?.error || "The sweep returned nothing");
 
+    const profile = await requireRunnerProfile();
     const res = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/purchase-sweep`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        runnerName: CONFIG.RUNNER_NAME,
-        accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
+        runnerName: profile.RUNNER_NAME,
+        accountGroupKey: profile.ACCOUNT_GROUP_KEY,
         orders: page.orders
       })
     });
@@ -620,6 +659,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 async function startRunner() {
+  const profile = await getRunnerProfile();
+  if (!profile) {
+    return { ok: false, error: "Pick which runner this browser is first" };
+  }
+
   isRunnerEnabled = true;
 
   await chrome.alarms.clear(RUNNER_ALARM_NAME);
@@ -730,6 +774,20 @@ async function runLoop() {
 
     if (!isRunnerEnabled) {
       console.log("⛔ Runner not enabled");
+      return;
+    }
+
+    // A runner that was on before an update to this version has no identity
+    // yet; it must not guess one, so it switches itself off until one is picked.
+    if (!(await getRunnerProfile())) {
+      console.warn("⛔ No runner chosen for this browser; switching the runner off");
+      isRunnerEnabled = false;
+      await saveState(false);
+      await chrome.alarms.clear(RUNNER_ALARM_NAME);
+      await chrome.storage.local.set({
+        lastErrorAt: new Date().toISOString(),
+        lastError: "No runner chosen for this browser; pick one in the popup and start again"
+      });
       return;
     }
 
@@ -854,15 +912,16 @@ async function handleSingleTask() {
 }
 
 async function fetchNextTask() {
+  const profile = await requireRunnerProfile();
   const res = await fetchWithTimeout(`${CONFIG.BACKEND_URL}/tasks/next`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      runnerName: CONFIG.RUNNER_NAME,
-      accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
-      minOrderDate: CONFIG.MIN_ORDER_DATE || null,
+      runnerName: profile.RUNNER_NAME,
+      accountGroupKey: profile.ACCOUNT_GROUP_KEY,
+      minOrderDate: profile.MIN_ORDER_DATE || null,
       // Tells the backend this version can run the purchase status sweep.
       capabilities: ["purchase-sweep"]
     })
@@ -871,8 +930,8 @@ async function fetchNextTask() {
   const data = await res.json();
 
   console.log("📦 fetchNextTask response:", {
-    runnerName: CONFIG.RUNNER_NAME,
-    accountGroupKey: CONFIG.ACCOUNT_GROUP_KEY,
+    runnerName: profile.RUNNER_NAME,
+    accountGroupKey: profile.ACCOUNT_GROUP_KEY,
     data
   });
   

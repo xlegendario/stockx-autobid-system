@@ -17,6 +17,30 @@
         cursor: pointer;
       }
 
+      #identity {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        padding: 8px;
+        margin-bottom: 12px;
+        font-size: 13px;
+      }
+
+      #identity.missing {
+        border-color: #c00;
+        background: #fff0f0;
+      }
+
+      #identity select {
+        width: 100%;
+        margin: 6px 0;
+        padding: 4px;
+      }
+
+      #identity button {
+        margin-bottom: 0;
+        padding: 6px;
+      }
+
       #status {
         font-size: 12px;
         white-space: pre-wrap;
@@ -25,6 +49,12 @@
     </style>
   </head>
   <body>
+    <div id="identity">
+      <div>This browser runs as: <strong id="currentRunner">…</strong></div>
+      <select id="runnerSelect"></select>
+      <button id="saveRunner">Save runner</button>
+    </div>
+
     <button id="startRunner">Start Runner</button>
     <button id="stopRunner">Stop Runner</button>
     <button id="forceStopRunner">Force Stop</button>
