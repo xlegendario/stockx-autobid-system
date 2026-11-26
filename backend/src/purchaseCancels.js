@@ -17,6 +17,14 @@
  *      with CANCEL to stop the sourcing if it no longer needs the pair.
  * The new pair's "Allocated" message is the store's "new pair found".
  *
+ * The same for an order StockX moved to History and refunded without
+ * calling it cancelled (REFUNDED, set by the sweep; ORD-028860). An order it
+ * closed without delivery and without a refund (CLOSED_NO_DELIVERY) is only
+ * reported internally: the money has to be claimed from StockX, and whether
+ * the order is sourced again is decided by hand (admin Cancel, Keep,
+ * "Marketplace cancelled our purchase"). Such orders keep that status, so an
+ * Airtable view on Purchase Status = CLOSED_NO_DELIVERY lists what is owed.
+ *
  * PURCHASE_CANCEL_MODE: "off", "preview" (default: only an internal message
  * saying what would happen) or "live".
  */
@@ -58,12 +66,12 @@ async function airtable(url, options = {}) {
 async function fetchCancelledPurchases() {
   const statusOr = WAITING_STATUSES.map((s) => `{Fulfillment Status}='${s}'`).join(",");
   const formula =
-    `AND({Purchase Marketplace}='StockX',{Purchase Status}='CANCELLED',` +
+    `AND({Purchase Marketplace}='StockX',OR({Purchase Status}='CANCELLED',{Purchase Status}='REFUNDED',{Purchase Status}='CLOSED_NO_DELIVERY'),` +
     `OR(${statusOr}),` +
     `FIND('MAIN_ACCOUNT',ARRAYJOIN({Merchant StockX Account Mode}))>0)`;
   const fields = [
     "Order ID", "Shopify Order Number", "Product Name", "Size", "SKU", "Store Name",
-    "Fulfillment Status", "StockX Order Number", "Purchase Status Since"
+    "Fulfillment Status", "StockX Order Number", "Purchase Status Since", "Purchase Status", "Purchase Status Title"
   ];
 
   const records = [];
@@ -145,7 +153,7 @@ async function cancelInPortal(record) {
     headers: { "Content-Type": "application/json", "x-kc-secret": secret() },
     body: JSON.stringify({
       record_id: record.id,
-      reason: `StockX cancelled ${text(record.fields["StockX Order Number"])}`
+      reason: `${text(record.fields["Purchase Status"]) === "REFUNDED" ? "StockX refunded" : "StockX cancelled"} ${text(record.fields["StockX Order Number"])}`
     }),
     signal: AbortSignal.timeout(120000)
   });
@@ -193,15 +201,34 @@ export async function runPurchaseCancels(now = Date.now()) {
 
   for (const record of records) {
     const f = record.fields;
+    const what = text(f["Purchase Status"]);
+    const verb = what === "REFUNDED" ? "StockX refunded" : what === "CLOSED_NO_DELIVERY" ? "StockX closed" : "StockX cancelled";
     const label = `**${text(f["Order ID"])}** (${text(f["Store Name"])}, ${text(f["Product Name"])} EU ${text(f.Size)}, StockX ${text(f["StockX Order Number"])}, ${text(f["Fulfillment Status"])})`;
     const trigger = storeTrigger(record);
+
+    // Not coming and not refunded: money to claim, the order is a choice.
+    if (what === "CLOSED_NO_DELIVERY") {
+      const key = `closed:${record.id}`;
+      if (said.has(key)) continue;
+      try {
+        await postInternal(
+          `💸 ${verb} ${label} without delivery and without a refund (${text(f["Purchase Status Title"])}). ` +
+          "Claim the money from StockX. To source the pair again: admin Cancel order → Keep → \"Marketplace cancelled our purchase\"."
+        );
+        said.add(key);
+        summary.handled.push({ order: text(f["Order ID"]), closedNoDelivery: true });
+      } catch (err) {
+        summary.errors.push({ order: text(f["Order ID"]), error: err.message });
+      }
+      continue;
+    }
 
     if (current !== "live") {
       const key = `preview:${record.id}`;
       if (said.has(key)) continue;
       try {
         await postInternal(
-          `🔍 Preview - StockX cancelled ${label}. Live this would: cancel it in the portal with Keep ` +
+          `🔍 Preview - ${verb} ${label}. Live this would: cancel it in the portal with Keep ` +
           "(store invoice credited, unit voided, purchase credited in Rompslomp, back to Outsource), " +
           "restart the autobid, and post this in the store's fulfillment-updates:",
           [previewEmbed(trigger)]
@@ -223,7 +250,7 @@ export async function runPurchaseCancels(now = Date.now()) {
       const key = `failed:${record.id}:${err.message}`;
       if (!said.has(key)) {
         said.add(key);
-        await postInternal(`❌ StockX cancelled ${label}, but the portal cancel failed: ${err.message}. Nothing was changed; it is tried again after the next sweep.`).catch(() => {});
+        await postInternal(`❌ ${verb} ${label}, but the portal cancel failed: ${err.message}. Nothing was changed; it is tried again after the next sweep.`).catch(() => {});
       }
       continue;
     }
@@ -233,7 +260,7 @@ export async function runPurchaseCancels(now = Date.now()) {
       await airtable(`${tableUrl()}/${record.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          fields: { ...RESET_FIELDS, ErrorMessage: `StockX cancelled ${text(f["StockX Order Number"])}; bidding again` },
+          fields: { ...RESET_FIELDS, ErrorMessage: `${verb} ${text(f["StockX Order Number"])}; bidding again` },
           typecast: true
         })
       });
@@ -248,7 +275,7 @@ export async function runPurchaseCancels(now = Date.now()) {
 
     const todos = (portal.todos || []).map((t) => `• To do: ${t}`).join("\n");
     await postInternal(
-      `${problems.length ? "⚠️" : "✅"} StockX cancelled ${label}: ${portal.return_number || "cancelled"}, back to Outsource and bidding again; store told.` +
+      `${problems.length ? "⚠️" : "✅"} ${verb} ${label}: ${portal.return_number || "cancelled"}, back to Outsource and bidding again; store told.` +
       (problems.length ? `\nNot done: ${problems.join("; ")}` : "") +
       (todos ? `\n${todos}` : "")
     ).catch(() => {});

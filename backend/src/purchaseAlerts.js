@@ -64,7 +64,7 @@ export function workingDaysBetween(fromMs, toMs) {
 }
 
 const ON_ITS_WAY_TO_US = new Set(["AC_SHIPPED"]);
-const FINISHED = new Set(["BUYER_RECEIVED", "CANCELLED"]);
+const FINISHED = new Set(["BUYER_RECEIVED", "CANCELLED", "REFUNDED", "CLOSED_NO_DELIVERY"]);
 
 // What the store reads. The marketplace is not named: to the store this is
 // our sourcing, not a StockX order.

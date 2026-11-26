@@ -33,11 +33,29 @@ const KNOWN_STOCKX_STATUSES = new Set([
   "AC_STAGED_TO_SHIP",
   "AC_SHIPPED",
   "BUYER_RECEIVED",
-  "CANCELLED"
+  "CANCELLED",
+  // Ours, not StockX's: an order StockX moved to History without delivering
+  // or cancelling it (ORD-028860, refunded after verification, 26-11-2026).
+  "REFUNDED",
+  "CLOSED_NO_DELIVERY"
 ]);
 
 // Nothing follows these; an order in one of them is done.
-const FINAL_STOCKX_STATUSES = new Set(["BUYER_RECEIVED", "CANCELLED"]);
+const FINAL_STOCKX_STATUSES = new Set(["BUYER_RECEIVED", "CANCELLED", "REFUNDED", "CLOSED_NO_DELIVERY"]);
+
+// History is always read at least this far back, so an order StockX closes
+// quietly weeks after the purchase is still seen.
+const MIN_HISTORY_DAYS = Number(process.env.PURCHASE_SWEEP_MIN_HISTORY_DAYS) || 60;
+
+// What an order in History that was neither delivered nor cancelled is.
+function closedStatus(order) {
+  if (order.open || ["BUYER_RECEIVED", "CANCELLED"].includes(String(order.statusKey || ""))) return null;
+  const refunded = Number(order.refunded) || 0;
+  if (refunded > 0) return { key: "REFUNDED", title: `Refunded € ${refunded.toFixed(2)} by StockX (was: ${order.statusTitle || order.statusKey})` };
+  // Detail not read this time: leave the order as it was.
+  if (order.refunded === undefined) return null;
+  return { key: "CLOSED_NO_DELIVERY", title: `Closed by StockX without delivery or refund (was: ${order.statusTitle || order.statusKey})` };
+}
 
 const FIELD = {
   orderNumber: "StockX Order Number",
@@ -80,7 +98,10 @@ export function takeSweepIfDue(runnerName, accountGroupKey) {
 
   const oldest = oldestOpenPurchase.get(key);
   const historySince = new Date(
-    oldest ? oldest - HISTORY_MARGIN_MS : Date.now() - FIRST_SWEEP_HISTORY_DAYS * 24 * 60 * 60 * 1000
+    Math.min(
+      oldest ? oldest - HISTORY_MARGIN_MS : Date.now() - FIRST_SWEEP_HISTORY_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() - MIN_HISTORY_DAYS * 24 * 60 * 60 * 1000
+    )
   ).toISOString();
 
   return {
@@ -164,6 +185,8 @@ function sameMoment(a, b) {
 }
 
 function changesFor(fields, order, now) {
+  const closed = closedStatus(order);
+  if (closed) order = { ...order, statusKey: closed.key, statusTitle: closed.title };
   const status = String(order.statusKey || "").trim();
   if (!status) return null;
 
@@ -241,7 +264,7 @@ export async function applyPurchaseSweep({ runnerName, accountGroupKey, orders }
   const statusCounts = {};
   const unknownStatuses = new Set();
   for (const order of byNumber.values()) {
-    const status = String(order.statusKey || "?");
+    const status = closedStatus(order)?.key || String(order.statusKey || "?");
     statusCounts[status] = (statusCounts[status] || 0) + 1;
     if (!KNOWN_STOCKX_STATUSES.has(status)) unknownStatuses.add(`${status} (${order.statusTitle || ""})`);
   }

@@ -187,9 +187,46 @@ export async function stockxPurchaseSweepInPage(options) {
       await sleep(300);
     }
 
+    // An order StockX moved to History without delivering or cancelling it
+    // (ORD-028860: verified on 17-10, then quietly refunded) is not coming.
+    // Its detail says whether the money was given back.
+    let closedFailures = 0;
+    for (const order of orders) {
+      if (order.open || ["BUYER_RECEIVED", "CANCELLED"].includes(order.statusKey) || !order.chainId) continue;
+
+      try {
+        const res = await originalFetch(GATEWAY, {
+          method: "POST",
+          credentials: "include",
+          headers: { ...headers, "x-operation-name": "getBuyOrder" },
+          body: JSON.stringify({
+            operationName: "getBuyOrder",
+            variables: {
+              chainId: order.chainId,
+              country: baseVariables.country,
+              market: baseVariables.market,
+              isShipByDateEnabled: true,
+              isDFSUpdatesEnabled: true,
+              isMysteryBoxEnabled: false
+            },
+            extensions: { persistedQuery: { version: 1, sha256Hash: KNOWN_ORDER_HASH } }
+          })
+        });
+        const json = await res.json();
+        const detail = json.data?.viewer?.order;
+        if (!detail) throw new Error("no order detail");
+        order.closedAction = detail.action || null;
+        order.refunded = (detail.refunds || []).reduce((sum, r) => sum + (Number(r?.refundedAmount?.value) || 0), 0);
+      } catch {
+        closedFailures++;
+      }
+
+      await sleep(300);
+    }
+
     for (const order of orders) delete order.chainId;
 
-    return { ok: true, orders, pages, usedKnownHash: !tableRequest, shipByFailures };
+    return { ok: true, orders, pages, usedKnownHash: !tableRequest, shipByFailures, closedFailures };
   } catch (err) {
     return { ok: false, error: String(err?.message || err) };
   } finally {
