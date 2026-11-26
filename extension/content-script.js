@@ -28,8 +28,30 @@ if (document.readyState === "complete") {
   window.addEventListener("load", onPageReady, { once: true });
 }
 
+/*
+ * Every stockx.com tab runs this script and sees the same currentTask. Only
+ * the runner's own tab may act on it; in any other tab (someone browsing,
+ * or a second window) the script stays quiet. If the answer cannot be had,
+ * it stays quiet too: a missed page costs a task timeout, a wrong tab can
+ * write off a live bid.
+ */
+async function isRunnerTab() {
+  try {
+    const response = await chrome.runtime.sendMessage({ type: "IS_RUNNER_TAB" });
+    return response?.ok === true && response.isRunnerTab === true;
+  } catch (err) {
+    console.warn("Could not ask whether this is the runner tab:", err?.message || err);
+    return false;
+  }
+}
+
 async function onPageReady() {
   console.log("Page loaded:", window.location.href);
+
+  if (!(await isRunnerTab())) {
+    console.log("Not the runner tab, leaving this page alone");
+    return;
+  }
 
   const stored = await chrome.storage.local.get("currentTask");
   currentTask = stored.currentTask || null;
@@ -856,8 +878,19 @@ function setInputValue(input, value) {
   input.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "Enter" }));
 }
 
-function handleVerifyBidsPage(attempt = 0) {
-  console.log("🔍 Checking bids page...");
+/*
+ * Whether the bid is still out is asked of StockX itself (bid-lookup.js): all
+ * live bids and open orders for this SKU. Reading the search results on the
+ * page wrote off live bids whenever the page was slow, and a record marked
+ * missing drops out of verifying - an accepted bid would then go unnoticed.
+ *
+ *   live bid in this size            -> still live
+ *   no bid, open order in this size  -> orders page, which reads the order
+ *   no bid, no order, lists complete -> missing
+ *   anything else                    -> VERIFY_FAILED (LastAction stays)
+ */
+async function handleVerifyBidsPage() {
+  console.log("🔍 Looking up bids and orders for", currentTask?.sku, currentTask?.size);
 
   if (!currentTask) {
     reportTaskResult("VERIFY_FAILED", {
@@ -866,81 +899,61 @@ function handleVerifyBidsPage(attempt = 0) {
     return;
   }
 
-  if (attempt > 12) {
+  let lookup = null;
+
+  try {
+    lookup = await chrome.runtime.sendMessage({ type: "RUN_BID_LOOKUP", sku: currentTask.sku });
+  } catch (err) {
+    lookup = { ok: false, error: err?.message || String(err) };
+  }
+
+  if (await stopIfNeeded("after bid lookup")) return;
+
+  if (!lookup?.ok) {
     reportTaskResult("VERIFY_FAILED", {
-      errorMessage: "Could not search bids page"
+      errorMessage: `Bid lookup failed: ${lookup?.error || "no answer"}`
     });
     return;
   }
 
-  const searchInput = findVerifySearchInput();
+  const inSize = (row) => {
+    const size = String(row?.size || "");
+    return textHasExactEuSize(/^eu\s/i.test(size) ? size : `EU ${size}`, currentTask.size);
+  };
 
-  if (!searchInput) {
-    console.log("🔍 Bids search input not found yet, retrying...");
-    setTimeout(() => handleVerifyBidsPage(attempt + 1), 1000);
+  const liveBids = (lookup.bids || []).filter(inSize);
+
+  if (liveBids.length) {
+    console.log("✅ Verify: bid still live", liveBids);
+    reportTaskResult(getVerifyStillLiveAction());
     return;
   }
 
-  const currentValue = normalizeText(searchInput.value || "");
-  const targetSku = normalizeText(currentTask.sku);
-  const expectedSizeText = getExpectedEuSizeText(currentTask.size);
+  const firstOrderNumber = String(currentTask.firstStockxOrderNumber || "").trim();
+  const openOrders = (lookup.orders || []).filter(
+    (order) =>
+      inSize(order) &&
+      !(currentTask.type === "VERIFY_SECOND_BID_STATUS" && order.orderNumber === firstOrderNumber)
+  );
 
-  console.log("🔍 Expected size text:", expectedSizeText);
-
-  if (currentValue !== targetSku) {
-    setInputValue(searchInput, currentTask.sku);
-
-    setTimeout(() => {
-      handleVerifyBidsPage(attempt + 1);
-    }, 2000);
-    return;
-  }
-
-  const pageText = getPageText();
-
-  if (
-    pageText.includes("you don't have active bids") ||
-    pageText.includes("items that you are bidding on will show up here")
-  ) {
-    console.log("🔍 Verify: no active bids found, checking orders...");
+  if (openOrders.length) {
+    console.log("🔍 Verify: no live bid but an open order in this size, reading it", openOrders);
     goToVerifyOrdersPage();
     return;
   }
 
-  const rowCandidates = Array.from(
-    document.querySelectorAll("tr, [role='row'], li, article, div")
-  ).filter((el) => {
-    const text = normalizeText(el.innerText);
-    const rect = el.getBoundingClientRect();
-    const style = window.getComputedStyle(el);
-  
-    if (!text) return false;
-    if (style.visibility === "hidden" || style.display === "none") return false;
-    if (rect.width <= 0 || rect.height <= 0) return false;
-  
-    return textHasExactEuSize(el.innerText, currentTask.size);
-  });
-  
-  const matchingBidRow = rowCandidates.find((row) => {
-    return textHasExactEuSize(row.innerText, currentTask.size);
-  });
+  if (!lookup.complete) {
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "Bid lookup did not get the full list of bids and orders from StockX"
+    });
+    return;
+  }
 
-  if (matchingBidRow) {
-    console.log("✅ Verify: bid still live");
-    reportTaskResult(getVerifyStillLiveAction());
-    return;
-  }
-  
-  if (attempt < 8) {
-    console.log("🔍 Verify: bid row not found yet, retrying bids page before checking orders...");
-    setTimeout(() => {
-      handleVerifyBidsPage(attempt + 1);
-    }, 1000);
-    return;
-  }
-  
-  console.log("🔍 Verify: bid not found after retries, checking orders...");
-  goToVerifyOrdersPage();
+  console.log("❌ Verify: no live bid and no open order in this size");
+  reportTaskResult(getVerifyMissingNoOrderAction(), {
+    errorMessage: `No live bid or open order for ${currentTask.sku} ${currentTask.size} ` +
+      `(${(lookup.bids || []).length} bids, ${(lookup.orders || []).length} orders on this SKU)`
+  });
 }
 
 function extractOrderNumberFromText(text) {
@@ -1173,8 +1186,17 @@ async function handleVerifyOrdersPage(attempt = 0) {
     pageText.includes("you don't have any pending orders") ||
     pageText.includes("items that are being shipped to you will show up here")
   ) {
-    console.log("❌ Verify: no pending orders found");
-    reportTaskResult(getVerifyMissingNoOrderAction());
+    // A page still loading its search results shows this too.
+    if (attempt < 6) {
+      setTimeout(() => handleVerifyOrdersPage(attempt + 1), 1000);
+      return;
+    }
+
+    // The bid lookup saw an open order for this SKU and size; the page not
+    // showing it says nothing about the bid.
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "StockX lists an open order for this size, but the orders page showed none"
+    });
     return;
   }
 
@@ -1202,8 +1224,9 @@ async function handleVerifyOrdersPage(attempt = 0) {
       return;
     }
 
-    console.log("❌ Verify: no matching order found");
-    reportTaskResult(getVerifyMissingNoOrderAction());
+    reportTaskResult("VERIFY_FAILED", {
+      errorMessage: "StockX lists an open order for this size, but its row was not found on the orders page"
+    });
     return;
   }
 

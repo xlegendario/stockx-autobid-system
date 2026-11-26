@@ -1,5 +1,6 @@
 import { CONFIG } from "./config.js";
 import { stockxPurchaseSweepInPage } from "./purchase-sweep.js";
+import { stockxBidLookupInPage } from "./bid-lookup.js";
 
 let isRunnerEnabled = false;
 let isTaskInProgress = false;
@@ -410,6 +411,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  /*
+   * Content scripts run in every stockx.com tab, and all of them read the same
+   * currentTask from storage. A tab someone else is browsing in would pick up
+   * the runner's task and report on it - that is how live bids got written
+   * off as missing. Only the runner's own tab may act.
+   */
+  if (message.type === "IS_RUNNER_TAB") {
+    chrome.storage.local
+      .get(["runnerTabId"])
+      .then(({ runnerTabId }) => {
+        sendResponse({ ok: true, isRunnerTab: !!runnerTabId && sender?.tab?.id === runnerTabId });
+      })
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
+    return true;
+  }
+
+  if (message.type === "RUN_BID_LOOKUP") {
+    runBidLookup(sender?.tab?.id, message.sku)
+      .then((response) => sendResponse(response))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+
+    return true;
+  }
+
   if (message.type === "RUN_PURCHASE_SWEEP") {
     handlePurchaseSweep(sender?.tab?.id)
       .then((response) => sendResponse(response))
@@ -490,6 +516,21 @@ async function handleTaskCompleted(payload) {
 
     return { ok: false, error: err.message };
   }
+}
+
+// Reads the live bids and open orders for one SKU inside the StockX page
+// (see bid-lookup.js); the content script decides what they mean.
+async function runBidLookup(tabId, sku) {
+  if (!tabId) return { ok: false, error: "The bids page has no tab" };
+
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: stockxBidLookupInPage,
+    args: [{ sku }]
+  });
+
+  return injection?.result || { ok: false, error: "The bid lookup returned nothing" };
 }
 
 /*
