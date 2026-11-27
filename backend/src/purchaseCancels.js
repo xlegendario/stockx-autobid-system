@@ -71,7 +71,8 @@ async function fetchCancelledPurchases() {
     `FIND('MAIN_ACCOUNT',ARRAYJOIN({Merchant StockX Account Mode}))>0)`;
   const fields = [
     "Order ID", "Shopify Order Number", "Product Name", "Size", "SKU", "Store Name",
-    "Fulfillment Status", "StockX Order Number", "Purchase Status Since", "Purchase Status", "Purchase Status Title"
+    "Fulfillment Status", "StockX Order Number", "Purchase Status Since", "Purchase Status", "Purchase Status Title",
+    "Order Date", "Created Time"
   ];
 
   const records = [];
@@ -86,6 +87,16 @@ async function fetchCancelledPurchases() {
     offset = data.offset || null;
   } while (offset);
   return records;
+}
+
+// Same cut-off as the "Needs StockX Removal" formula (calendar days since Order Date):
+// an order this old is too slow to source on StockX again, so no new bid is placed.
+const MAX_STOCKX_ORDER_AGE_DAYS = Number(process.env.PURCHASE_CANCEL_MAX_REBID_DAYS || 6);
+
+function tooOldForStockX(f) {
+  const since = new Date(text(f["Order Date"]) || text(f["Created Time"]));
+  if (Number.isNaN(since.getTime())) return false;
+  return (Date.now() - since.getTime()) / 86400000 >= MAX_STOCKX_ORDER_AGE_DAYS;
 }
 
 function secret() {
@@ -256,11 +267,14 @@ export async function runPurchaseCancels(now = Date.now()) {
     }
 
     const problems = [];
+    const tooOld = tooOldForStockX(f);
     try {
       await airtable(`${tableUrl()}/${record.id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          fields: { ...RESET_FIELDS, ErrorMessage: `${verb} ${text(f["StockX Order Number"])}; bidding again` },
+          fields: tooOld
+            ? { ...RESET_FIELDS, LastAction: "BID_REMOVED", ErrorMessage: `${verb} ${text(f["StockX Order Number"])}; order older than ${MAX_STOCKX_ORDER_AGE_DAYS} days, no new StockX bid` }
+            : { ...RESET_FIELDS, ErrorMessage: `${verb} ${text(f["StockX Order Number"])}; bidding again` },
           typecast: true
         })
       });
@@ -275,7 +289,7 @@ export async function runPurchaseCancels(now = Date.now()) {
 
     const todos = (portal.todos || []).map((t) => `• To do: ${t}`).join("\n");
     await postInternal(
-      `${problems.length ? "⚠️" : "✅"} ${verb} ${label}: ${portal.return_number || "cancelled"}, back to Outsource and bidding again; store told.` +
+      `${problems.length ? "⚠️" : "✅"} ${verb} ${label}: ${portal.return_number || "cancelled"}, back to Outsource and ${tooOld ? `no new StockX bid (older than ${MAX_STOCKX_ORDER_AGE_DAYS} days)` : "bidding again"}; store told.` +
       (problems.length ? `\nNot done: ${problems.join("; ")}` : "") +
       (todos ? `\n${todos}` : "")
     ).catch(() => {});
