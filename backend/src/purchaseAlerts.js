@@ -165,7 +165,10 @@ function inTransitTooLong(f, status, now) {
  */
 export function dueMessage(f, now = Date.now()) {
   const status = text(f["Purchase Status"]);
-  const purchased = time(f["First StockX Order Placed At"]) ?? time(f["Order Date"]);
+  // Count from our purchase, never from the store's order date: a re-bought
+  // order would otherwise be "late" the moment it is bought. The sweep fills
+  // this field from StockX when the result handler did not.
+  const purchased = time(f["First StockX Order Placed At"]);
   if (!status || !purchased) return null;
 
   const days = workingDaysBetween(purchased, now);

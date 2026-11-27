@@ -65,7 +65,8 @@ const FIELD = {
   since: "Purchase Status Since",
   etaFrom: "Purchase ETA From",
   etaUntil: "Purchase ETA Until",
-  sellerShipBy: "Purchase Seller Ship By"
+  sellerShipBy: "Purchase Seller Ship By",
+  placedAt: "First StockX Order Placed At"
 };
 
 const lastHandedOut = new Map();
@@ -211,6 +212,11 @@ function changesFor(fields, order, now) {
   const etaUntil = isoOrNull(order.etaUntil);
   if (etaFrom && !sameMoment(fields[FIELD.etaFrom], etaFrom)) update[FIELD.etaFrom] = etaFrom;
   if (etaUntil && !sameMoment(fields[FIELD.etaUntil], etaUntil)) update[FIELD.etaUntil] = etaUntil;
+
+  // The plain ORDER_PLACED result does not stamp the purchase time, and the
+  // delay alerts count from it; take StockX's own purchase date when missing.
+  const placedAt = isoOrNull(order.purchaseDate);
+  if (placedAt && !fields[FIELD.placedAt]) update[FIELD.placedAt] = placedAt;
 
   const shipBy = isoOrNull(order.sellerShipBy);
   if (shipBy && !sameMoment(fields[FIELD.sellerShipBy], shipBy)) update[FIELD.sellerShipBy] = shipBy;
